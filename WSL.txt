@@ -1,0 +1,8 @@
+# 1. Instalar dependencias (Java, apktool, jadx, aapt)
+sudo bash setup_wsl.sh
+
+# 2. Verificar que todo funciona
+python3 test_framework.py
+
+# 3. Analizar tu primer APK
+python3 apk_forensics.py target.apk
