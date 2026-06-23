@@ -24,3 +24,4 @@ class Job(Base):
     error_message = Column(Text, nullable=True)
     report = Column(JSON, nullable=True)
     file_path = Column(Text, nullable=False)
+    decompiled_path = Column(Text, nullable=True)

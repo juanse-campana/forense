@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getJob, type JobDetails, type Finding } from "@/lib/api";
+import { getJob, getJobFindings, type JobDetails, type Finding } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -211,15 +211,82 @@ function OverviewTab({ job }: { job: JobDetails }) {
 }
 
 function FindingsTab({
-  findings,
+  jobId,
   severityFilter,
   setSeverityFilter,
 }: {
-  findings: Finding[];
+  jobId: string;
   severityFilter: (typeof severityFilters)[number];
   setSeverityFilter: (value: (typeof severityFilters)[number]) => void;
 }) {
   const t = useTranslations();
+  const [findings, setFindings] = useState<Finding[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const observerRef = React.useRef<HTMLDivElement | null>(null);
+
+  const loadFindings = React.useCallback(
+    async (reset = false) => {
+      const targetPage = reset ? 1 : page;
+      if (reset) {
+        setIsLoading(true);
+        setFindings([]);
+        setPage(1);
+        setHasMore(false);
+      } else {
+        if (!hasMore || isLoadingMore) return;
+        setIsLoadingMore(true);
+      }
+
+      try {
+        const data = await getJobFindings(
+          jobId,
+          targetPage,
+          30,
+          severityFilter
+        );
+        setFindings((prev) => (reset ? data.items : [...prev, ...data.items]));
+        setHasMore(data.has_more);
+        setPage(targetPage + 1);
+      } catch {
+        // silently ignore; could surface error if desired
+      } finally {
+        if (reset) {
+          setIsLoading(false);
+        } else {
+          setIsLoadingMore(false);
+        }
+      }
+    },
+    [jobId, severityFilter, page, hasMore, isLoadingMore]
+  );
+
+  useEffect(() => {
+    loadFindings(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId, severityFilter]);
+
+  useEffect(() => {
+    const node = observerRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
+          loadFindings(false);
+        }
+      },
+      { rootMargin: "100px" }
+    );
+
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMore, isLoadingMore, loadFindings]);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -240,35 +307,49 @@ function FindingsTab({
         </span>
       </div>
 
-      {findings.length > 0 ? (
-        <div className="rounded bg-surface outline outline-1 outline-outline-variant">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("results.columns.severity")}</TableHead>
-                <TableHead>{t("results.columns.category")}</TableHead>
-                <TableHead>{t("results.columns.title")}</TableHead>
-                <TableHead>{t("results.columns.file")}</TableHead>
-                <TableHead>{t("results.columns.line")}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {findings.map((finding, index) => (
-                <TableRow
-                  key={index}
-                  className={index % 2 === 1 ? "bg-surface-container-low/50" : ""}
-                >
-                  <TableCell>
-                    <Badge variant={finding.severity}>{t(`severity.${finding.severity}`)}</Badge>
-                  </TableCell>
-                  <TableCell>{finding.category}</TableCell>
-                  <TableCell>{finding.title}</TableCell>
-                  <TableCell className="font-mono text-xs">{finding.file || "-"}</TableCell>
-                  <TableCell>{finding.line ?? "-"}</TableCell>
+      {isLoading ? (
+        <div className="flex h-32 items-center justify-center text-on-surface-variant">
+          {t("common.loading")}
+        </div>
+      ) : findings.length > 0 ? (
+        <div className="space-y-2">
+          <div className="rounded bg-surface outline outline-1 outline-outline-variant">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("results.columns.severity")}</TableHead>
+                  <TableHead>{t("results.columns.category")}</TableHead>
+                  <TableHead>{t("results.columns.title")}</TableHead>
+                  <TableHead>{t("results.columns.file")}</TableHead>
+                  <TableHead>{t("results.columns.line")}</TableHead>
+                  <TableHead>Detail</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {findings.map((finding, index) => (
+                  <TableRow
+                    key={index}
+                    className={index % 2 === 1 ? "bg-surface-container-low/50" : ""}
+                  >
+                    <TableCell>
+                      <Badge variant={finding.severity}>{t(`severity.${finding.severity}`)}</Badge>
+                    </TableCell>
+                    <TableCell>{finding.category}</TableCell>
+                    <TableCell>{finding.title}</TableCell>
+                    <TableCell className="font-mono text-xs">{finding.file || "-"}</TableCell>
+                    <TableCell>{finding.line ?? "-"}</TableCell>
+                    <TableCell className="text-sm">{finding.detail || "-"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <div ref={observerRef} className="h-4 w-full" />
+          {isLoadingMore && (
+            <div className="flex h-12 items-center justify-center text-on-surface-variant">
+              {t("common.loading")}
+            </div>
+          )}
         </div>
       ) : (
         <div className="rounded bg-surface py-12 text-center text-on-surface-variant outline outline-1 outline-outline-variant">
@@ -559,17 +640,7 @@ export default function JobResultsPage() {
     };
   }, [id, t]);
 
-  const filteredFindings = useMemo(() => {
-    const list = job?.findings ?? [];
-    if (severityFilter === "all") return list;
-    return list.filter((f) => f.severity === severityFilter);
-  }, [job?.findings, severityFilter]);
 
-  const sortedFindings = useMemo(() => {
-    return [...filteredFindings].sort(
-      (a, b) => severityOrder[a.severity] - severityOrder[b.severity]
-    );
-  }, [filteredFindings]);
 
   if (loading) {
     return (
@@ -659,7 +730,7 @@ export default function JobResultsPage() {
         {activeTab === "overview" && <OverviewTab job={job} />}
         {activeTab === "findings" && (
           <FindingsTab
-            findings={sortedFindings}
+            jobId={id}
             severityFilter={severityFilter}
             setSeverityFilter={setSeverityFilter}
           />

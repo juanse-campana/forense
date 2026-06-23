@@ -69,6 +69,17 @@ async def run(job_id: UUID, apk_path: str):
 
     thread.join()
 
+    # Persist JADX output if available
+    jadx_source = Path(workdir) / "jadx_out"
+    upload_dir = Path(apk_path).parent
+    jadx_dest = upload_dir / "jadx_out"
+    decompiled_path = None
+    if jadx_source.exists():
+        if jadx_dest.exists():
+            shutil.rmtree(jadx_dest, ignore_errors=True)
+        shutil.copytree(jadx_source, jadx_dest)
+        decompiled_path = str(jadx_dest)
+
     async with AsyncSessionLocal() as db:
         try:
             result = await db.execute(select(Job).where(Job.id == job_id))
@@ -85,6 +96,8 @@ async def run(job_id: UUID, apk_path: str):
                 job.package_name = report.package_name
                 job.version_name = report.version_name
                 job.obfuscation_score = report.obfuscation_score
+                if decompiled_path:
+                    job.decompiled_path = decompiled_path
                 job.report = {
                     "apk_path": report.apk_path,
                     "apk_name": report.apk_name,

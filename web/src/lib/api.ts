@@ -15,8 +15,10 @@ export interface Finding {
   severity: "critical" | "high" | "medium" | "low" | "info";
   category: string;
   title: string;
+  detail?: string;
   file?: string;
   line?: number;
+  evidence?: string;
 }
 
 export interface FileEntry {
@@ -140,6 +142,36 @@ export async function getJob(id: string): Promise<JobDetails> {
   return response.json();
 }
 
+export async function getJobFindings(
+  jobId: string,
+  page = 1,
+  limit = 30,
+  severity?: string
+): Promise<PaginatedFindings> {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit),
+  });
+  if (severity && severity !== "all") {
+    params.append("severity", severity);
+  }
+
+  const response = await fetch(
+    `${API_BASE}/api/v1/jobs/${jobId}/findings?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Failed to fetch findings" }));
+    throw new Error(
+      error.detail || `Failed to fetch findings: ${response.statusText}`
+    );
+  }
+
+  return response.json();
+}
+
 export function subscribeToProgress(
   id: string,
   onProgress: (event: ProgressEvent) => void
@@ -167,6 +199,14 @@ export interface PaginatedJobs {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface PaginatedFindings {
+  items: Finding[];
+  total: number;
+  page: number;
+  limit: number;
+  has_more: boolean;
 }
 
 export async function getJobs(
@@ -201,4 +241,53 @@ export async function deleteJob(id: string): Promise<void> {
     const error = await response.json().catch(() => ({ detail: "Failed to delete job" }));
     throw new Error(error.detail || `Failed to delete job: ${response.statusText}`);
   }
+}
+
+export interface FileNode {
+  name: string;
+  type: "file" | "directory";
+  size?: number;
+  path: string;
+}
+
+export async function getJobFiles(jobId: string, path?: string): Promise<FileNode[]> {
+  const params = new URLSearchParams();
+  if (path) params.append("path", path);
+
+  const response = await fetch(
+    `${API_BASE}/api/v1/jobs/${jobId}/files?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Failed to fetch files" }));
+    throw new Error(
+      error.detail || `Failed to fetch files: ${response.statusText}`
+    );
+  }
+
+  return response.json();
+}
+
+export async function getJobFileContent(
+  jobId: string,
+  path: string
+): Promise<{ content: string; path: string; name: string }> {
+  const params = new URLSearchParams({ path });
+
+  const response = await fetch(
+    `${API_BASE}/api/v1/jobs/${jobId}/files/content?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Failed to fetch file content" }));
+    throw new Error(
+      error.detail || `Failed to fetch file content: ${response.statusText}`
+    );
+  }
+
+  return response.json();
 }
