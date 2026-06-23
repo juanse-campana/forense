@@ -332,7 +332,7 @@ function FindingsTab({
                     className={index % 2 === 1 ? "bg-surface-container-low/50" : ""}
                   >
                     <TableCell>
-                      <Badge variant={finding.severity}>{t(`severity.${finding.severity}`)}</Badge>
+                      <Badge variant={finding.severity.toLowerCase()}>{t(`severity.${finding.severity.toLowerCase()}`)}</Badge>
                     </TableCell>
                     <TableCell>{finding.category}</TableCell>
                     <TableCell>{finding.title}</TableCell>

@@ -145,8 +145,8 @@ export default function HistoryPage() {
                   <TableCell>{job.findings_count ?? "-"}</TableCell>
                   <TableCell>
                     {job.highest_severity ? (
-                      <Badge variant={job.highest_severity}>
-                        {t(`severity.${job.highest_severity}`)}
+                      <Badge variant={job.highest_severity.toLowerCase()}>
+                        {t(`severity.${job.highest_severity.toLowerCase()}`)}
                       </Badge>
                     ) : (
                       "-"

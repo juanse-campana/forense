@@ -164,6 +164,22 @@
     "back": "Volver",
     "unknown": "Desconocido"
   },
+  "compare": {
+    "title": "Comparar APKs",
+    "selectA": "Seleccionar APK A",
+    "selectB": "Seleccionar APK B",
+    "compare": "Comparar",
+    "sharedFindings": "Hallazgos compartidos",
+    "uniqueToA": "Solo en A",
+    "uniqueToB": "Solo en B",
+    "metadataDiff": "Diferencias de metadata"
+  },
+  "codeViewer": {
+    "title": "Visor de código",
+    "copy": "Copiar",
+    "back": "Volver",
+    "line": "Línea"
+  },
   "locale": {
     "es": "Español",
     "en": "English"
