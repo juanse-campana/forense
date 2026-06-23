@@ -1,0 +1,171 @@
+{
+  "app": {
+    "title": "Forense",
+    "tagline": "Análisis forense de APK"
+  },
+  "nav": {
+    "upload": "Cargar APK",
+    "history": "Historial",
+    "dashboard": "Panel"
+  },
+  "upload": {
+    "title": "Cargar APK",
+    "dragDrop": "Arrastra un archivo APK aquí",
+    "orClick": "o haz clic para seleccionar",
+    "maxSize": "Máximo 500MB",
+    "analyzing": "Analizando...",
+    "uploading": "Subiendo...",
+    "analyze": "Analizar",
+    "viewResults": "Ver resultados",
+    "analyzeAnother": "Analizar otro",
+    "completed": "Análisis completado",
+    "invalidType": "El archivo debe ser un APK válido",
+    "fileTooLarge": "El archivo excede el límite de 500MB",
+    "serverError": "Error del servidor. Intenta de nuevo.",
+    "analysisError": "Error durante el análisis",
+    "tryAgain": "Intentar de nuevo"
+  },
+  "history": {
+    "title": "Historial de Análisis",
+    "empty": "No hay análisis previos",
+    "filters": {
+      "all": "Todos",
+      "pending": "Pendiente",
+      "running": "En progreso",
+      "completed": "Completado",
+      "failed": "Fallido"
+    },
+    "columns": {
+      "filename": "Archivo",
+      "package": "Paquete",
+      "status": "Estado",
+      "findings": "Hallazgos",
+      "severity": "Severidad",
+      "date": "Fecha",
+      "actions": "Acciones"
+    },
+    "status": {
+      "pending": "Pendiente",
+      "running": "En progreso",
+      "completed": "Completado",
+      "failed": "Fallido"
+    },
+    "emptyState": {
+      "title": "No hay análisis aún",
+      "uploadFirst": "Sube tu primer APK"
+    },
+    "deleteModal": {
+      "title": "Eliminar análisis",
+      "description": "¿Estás seguro de que deseas eliminar este análisis? Esta acción no se puede deshacer."
+    },
+    "pagination": {
+      "showing": "Mostrando {from}-{to} de {total}",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "perPage": "Por página"
+    }
+  },
+  "results": {
+    "title": "Resultados del análisis",
+    "tabs": {
+      "overview": "Resumen",
+      "findings": "Hallazgos",
+      "permissions": "Permisos",
+      "crypto": "Criptografía",
+      "structure": "Estructura",
+      "manifest": "Manifest",
+      "obfuscation": "Ofuscación"
+    },
+    "export": "Exportar",
+    "exportJson": "JSON",
+    "exportHtml": "HTML",
+    "exportMarkdown": "Markdown",
+    "hashes": "Hashes",
+    "metadata": "Metadatos",
+    "components": "Componentes",
+    "sdk": "SDK",
+    "nativeLibs": "Librerías nativas",
+    "dexFiles": "Archivos DEX",
+    "version": "Versión",
+    "size": "Tamaño",
+    "minSdk": "SDK mínimo",
+    "targetSdk": "SDK objetivo",
+    "activities": "Actividades",
+    "services": "Servicios",
+    "receivers": "Receptores",
+    "providers": "Proveedores",
+    "exportedComponents": "Componentes exportados",
+    "debuggable": "Depurable",
+    "allowBackup": "Permitir backup",
+    "dangerousPermissions": "Permisos peligrosos",
+    "allPermissions": "Todos los permisos",
+    "crypto": "Criptografía",
+    "obfuscation": "Ofuscación",
+    "weakAlgorithms": "Algoritmos débiles",
+    "score": "Puntuación",
+    "interpretation": "Interpretación",
+    "low": "Bajo",
+    "moderate": "Moderado",
+    "high": "Alto",
+    "indicators": "Indicadores",
+    "filters": {
+      "all": "Todos",
+      "critical": "Crítico",
+      "high": "Alto",
+      "medium": "Medio",
+      "low": "Bajo",
+      "info": "Info"
+    },
+    "columns": {
+      "severity": "Severidad",
+      "category": "Categoría",
+      "title": "Título",
+      "file": "Archivo",
+      "line": "Línea",
+      "algorithm": "Algoritmo",
+      "type": "Tipo",
+      "risk": "Riesgo"
+    },
+    "noFindings": "No se encontraron hallazgos",
+    "noPermissions": "No se encontraron permisos",
+    "noCrypto": "No se encontraron referencias criptográficas",
+    "noStructure": "No hay información de estructura disponible",
+    "noManifest": "No hay manifiesto disponible",
+    "noIndicators": "No hay indicadores de ofuscación"
+  },
+  "dashboard": {
+    "title": "Panel de Control",
+    "totalAnalyses": "Análisis totales",
+    "criticalFindings": "Hallazgos críticos",
+    "avgObfuscation": "Ofuscación promedio",
+    "thisWeek": "Esta semana",
+    "recentActivity": "Actividad reciente",
+    "noRecentActivity": "No hay actividad reciente"
+  },
+  "severity": {
+    "critical": "Crítico",
+    "high": "Alto",
+    "medium": "Medio",
+    "low": "Bajo",
+    "info": "Info"
+  },
+  "common": {
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "delete": "Eliminar",
+    "download": "Descargar",
+    "view": "Ver",
+    "search": "Buscar",
+    "filter": "Filtrar",
+    "all": "Todos",
+    "loading": "Cargando...",
+    "error": "Error",
+    "retry": "Reintentar",
+    "back": "Volver",
+    "unknown": "Desconocido"
+  },
+  "locale": {
+    "es": "Español",
+    "en": "English"
+  }
+}

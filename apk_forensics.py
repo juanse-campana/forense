@@ -31,7 +31,7 @@ import zipfile
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 # ──────────────────────────────────────────────
 #  Colores ANSI (desactivables con --no-color)
@@ -783,6 +783,59 @@ def print_summary(report: ForensicsReport):
             print(f"  {color}{sev:<10}{C.RESET} {n} hallazgo{'s' if n!=1 else ''}")
     print(f"{'─'*60}\n")
 
+def run_analysis(apk_path: str, workdir: str, no_jadx: bool = False, progress_callback: Optional[Callable[[str, str], None]] = None) -> ForensicsReport:
+    """Run the full forensics analysis pipeline on an APK.
+
+    Args:
+        apk_path: Absolute path to the APK file.
+        workdir: Existing temporary directory for extraction.
+        no_jadx: Skip JADX decompilation.
+        progress_callback: Optional callback(step_name, status) for progress updates.
+
+    Returns:
+        ForensicsReport populated with analysis results.
+    """
+    apk_name = Path(apk_path).stem
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report = ForensicsReport(
+        apk_path=apk_path,
+        apk_name=apk_name,
+        timestamp=timestamp,
+        md5="", sha256="", file_size=0,
+    )
+
+    analyze_integrity(apk_path, report)
+    if progress_callback:
+        progress_callback("integrity", "ok")
+
+    analyze_structure(apk_path, report, workdir)
+    if progress_callback:
+        progress_callback("structure", "ok")
+
+    analyze_manifest(apk_path, report, workdir)
+    if progress_callback:
+        progress_callback("manifest", "ok")
+
+    analyze_strings(workdir, report)
+    if progress_callback:
+        progress_callback("strings", "ok")
+
+    analyze_crypto(workdir, report)
+    if progress_callback:
+        progress_callback("crypto", "ok")
+
+    analyze_obfuscation(workdir, report)
+    if progress_callback:
+        progress_callback("obfuscation", "ok")
+
+    if not no_jadx:
+        analyze_with_jadx(apk_path, workdir, report)
+        if progress_callback:
+            progress_callback("jadx", "ok")
+
+    return report
+
+
 # ──────────────────────────────────────────────
 #  Entry point
 # ──────────────────────────────────────────────
@@ -817,25 +870,11 @@ def main():
     print(f"{C.BOLD}{C.BLUE}╚══════════════════════════════════════════╝{C.RESET}\n")
     log(f"Analizando: {C.BOLD}{apk_path}{C.RESET}")
 
-    report = ForensicsReport(
-        apk_path=apk_path,
-        apk_name=apk_name,
-        timestamp=timestamp,
-        md5="", sha256="", file_size=0,
-    )
-
     workdir = tempfile.mkdtemp(prefix="apk_forensics_")
     log(f"Directorio de trabajo: {workdir}", "INFO")
 
     try:
-        analyze_integrity(apk_path, report)
-        analyze_structure(apk_path, report, workdir)
-        analyze_manifest(apk_path, report, workdir)
-        analyze_strings(workdir, report)
-        analyze_crypto(workdir, report)
-        analyze_obfuscation(workdir, report)
-        if not args.no_jadx:
-            analyze_with_jadx(apk_path, workdir, report)
+        report = run_analysis(apk_path, workdir, no_jadx=args.no_jadx)
     finally:
         if not args.keep_tmp:
             shutil.rmtree(workdir, ignore_errors=True)
