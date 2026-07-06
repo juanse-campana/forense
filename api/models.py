@@ -18,6 +18,8 @@ class Job(Base):
     package_name = Column(String(255), nullable=True)
     version_name = Column(String(100), nullable=True)
     obfuscation_score = Column(Integer, nullable=True)
+    findings_count = Column(Integer, nullable=True, default=0)
+    highest_severity = Column(String(20), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True), nullable=True)

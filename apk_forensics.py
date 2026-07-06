@@ -33,6 +33,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable
 
+# En Windows la consola puede quedar en cp1252 y no soporta los caracteres
+# no-ASCII usados en los logs (→, ✓, etc.), lo que crashea el análisis.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # ──────────────────────────────────────────────
 #  Colores ANSI (desactivables con --no-color)
 # ──────────────────────────────────────────────
@@ -92,6 +99,9 @@ class ForensicsReport:
     interesting_urls: list = field(default_factory=list)
     interesting_files: list = field(default_factory=list)
     tool_versions: dict = field(default_factory=dict)
+    debuggable: bool = False
+    allow_backup: bool = False
+    manifest: str = ""
 
 # ──────────────────────────────────────────────
 #  Patrones de detección
@@ -213,16 +223,18 @@ def analyze_structure(apk_path: str, report: ForensicsReport, workdir: str):
                                ".json", ".xml", ".properties", ".yaml", ".yml"}
     try:
         with zipfile.ZipFile(apk_path, "r") as z:
+            sizes = {info.filename: info.file_size for info in z.infolist()}
             entries = z.namelist()
-            report.dex_files    = [e for e in entries if e.endswith(".dex")]
-            report.native_libs  = [e for e in entries if e.endswith(".so")]
+            report.dex_files    = [{"path": e, "size": sizes.get(e, 0)} for e in entries if e.endswith(".dex")]
+            report.native_libs  = [{"path": e, "size": sizes.get(e, 0)} for e in entries if e.endswith(".so")]
             report.interesting_files = [
-                e for e in entries
+                {"path": e, "size": sizes.get(e, 0)}
+                for e in entries
                 if Path(e).suffix.lower() in interesting_extensions
                 and not e.endswith(".dex")
             ]
             log(f"Archivos totales : {len(entries)}", "OK")
-            log(f"DEX files        : {len(report.dex_files)} → {report.dex_files}", "OK")
+            log(f"DEX files        : {len(report.dex_files)} → {[f['path'] for f in report.dex_files]}", "OK")
             log(f"Librerías .so    : {len(report.native_libs)}", "OK")
             log(f"Archivos de interés forense: {len(report.interesting_files)}", "OK")
 
@@ -266,6 +278,8 @@ def analyze_manifest(apk_path: str, report: ForensicsReport, workdir: str):
             "Instala apktool y aapt para análisis completo del manifest.",
         ))
 
+    report.manifest = manifest_text
+
 def _parse_aapt_output(text: str, report: ForensicsReport):
     for line in text.splitlines():
         if line.startswith("package:"):
@@ -306,13 +320,28 @@ def _parse_manifest_xml(xml: str, report: ForensicsReport):
             [f"{comp}: {n}" for n in matches]
         )
 
+    # Inventario total de componentes (exportados o no)
+    component_plurals = {
+        "activity": "activities",
+        "service": "services",
+        "receiver": "receivers",
+        "provider": "providers",
+    }
+    report.components = {
+        plural: len(re.findall(rf'<{comp}[\s>]', xml, re.IGNORECASE))
+        for comp, plural in component_plurals.items()
+    }
+
     # Flags de depuración
-    if 'android:debuggable="true"' in xml:
+    report.debuggable = 'android:debuggable="true"' in xml
+    report.allow_backup = 'android:allowBackup="true"' in xml or 'android:allowBackup' not in xml
+
+    if report.debuggable:
         report.findings.append(Finding(
             "HIGH", "Configuration", "App compilada con debuggable=true",
             "Permite adjuntar depuradores (adb) y leer memoria en producción.",
         ))
-    if 'android:allowBackup="true"' in xml or 'android:allowBackup' not in xml:
+    if report.allow_backup:
         report.findings.append(Finding(
             "MEDIUM", "Configuration", "allowBackup habilitado (o no declarado)",
             "Los datos de la app pueden extraerse con `adb backup` sin root.",
@@ -411,13 +440,24 @@ def analyze_crypto(workdir: str, report: ForensicsReport):
         except Exception:
             continue
         for pattern, label in CRYPTO_PATTERNS:
-            if re.search(pattern, content):
-                crypto_found[label] = crypto_found.get(label, 0) + 1
+            for m in re.finditer(pattern, content):
+                token = m.group(1).upper()
+                key = (token, label)
+                crypto_found[key] = crypto_found.get(key, 0) + 1
 
-    report.crypto_usage = [f"{label} ({count} archivos)" for label, count in crypto_found.items()]
+    weak_tokens = ("MD5", "SHA1", "SHA-1", "ECB")
+    report.crypto_usage = [
+        {
+            "algorithm": token,
+            "type": label,
+            "files": count,
+            "risk": "Débil" if any(w in token for w in weak_tokens) else "",
+        }
+        for (token, label), count in sorted(crypto_found.items(), key=lambda kv: -kv[1])
+    ]
 
     # Detectar ECB (inseguro)
-    if "Cipher mode" in str(crypto_found):
+    if any(label == "Cipher mode" for _, label in crypto_found):
         # buscar ECB específicamente
         for fpath in smali_dir.rglob("*.smali"):
             try:
@@ -433,7 +473,7 @@ def analyze_crypto(workdir: str, report: ForensicsReport):
                 break
 
     # SHA1 / MD5 para integridad → débil
-    if any("MD5" in c or "SHA1" in c for c in report.crypto_usage):
+    if any("MD5" in c["algorithm"] or "SHA1" in c["algorithm"] for c in report.crypto_usage):
         report.findings.append(Finding(
             "MEDIUM", "Crypto", "Uso de MD5/SHA-1 detectado",
             "MD5 y SHA-1 son considerados inseguros para firmas e integridad.",
@@ -441,7 +481,7 @@ def analyze_crypto(workdir: str, report: ForensicsReport):
 
     log(f"Primitivas criptográficas: {len(crypto_found)}", "OK")
     for item in report.crypto_usage:
-        log(f"  • {item}", "INFO")
+        log(f"  • {item['algorithm']} ({item['type']}, {item['files']} archivos)", "INFO")
 
 # ──────────────────────────────────────────────
 #  Módulo 6 · Detección de ofuscación
@@ -619,7 +659,7 @@ def _write_markdown(report: ForensicsReport, path: str):
 
     lines += ["\n## Criptografía detectada"]
     for c in report.crypto_usage:
-        lines.append(f"- {c}")
+        lines.append(f"- {c['algorithm']} ({c['type']}, {c['files']} archivos)")
 
     lines += [f"\n## Ofuscación", f"Score: **{report.obfuscation_score}/100**"]
     for i in report.obfuscation_indicators:
@@ -696,7 +736,10 @@ def _write_html(report: ForensicsReport, path: str):
         for p in report.dangerous_permissions
     ]) or '<span style="color:#16a34a">Ninguno detectado</span>'
 
-    crypto_html = "".join([f"<li style='font-size:12px'>{c}</li>" for c in report.crypto_usage])
+    crypto_html = "".join([
+        f"<li style='font-size:12px'>{c['algorithm']} ({c['type']}, {c['files']} archivos)</li>"
+        for c in report.crypto_usage
+    ])
     urls_html   = "".join([f"<li style='font-size:11px'><code>{u}</code></li>" for u in report.interesting_urls[:20]])
 
     html = f"""<!DOCTYPE html>
@@ -728,7 +771,7 @@ def _write_html(report: ForensicsReport, path: str):
     <tr><td>MD5</td><td><code>{report.md5}</code></td></tr>
     <tr><td>SHA-256</td><td><code style="font-size:11px">{report.sha256}</code></td></tr>
     <tr><td>Tamaño</td><td>{report.file_size:,} bytes</td></tr>
-    <tr><td>DEX files</td><td>{', '.join(report.dex_files)}</td></tr>
+    <tr><td>DEX files</td><td>{', '.join(f['path'] for f in report.dex_files)}</td></tr>
     <tr><td>Librerías .so</td><td>{len(report.native_libs)}</td></tr>
     <tr><td>Ofuscación score</td><td>{report.obfuscation_score}/100</td></tr>
   </table>

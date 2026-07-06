@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from apk_forensics import run_analysis
+from apk_forensics import run_analysis, SEVERITY_ORDER
 from database import AsyncSessionLocal
 from models import Job
 
@@ -96,6 +96,10 @@ async def run(job_id: UUID, apk_path: str):
                 job.package_name = report.package_name
                 job.version_name = report.version_name
                 job.obfuscation_score = report.obfuscation_score
+                job.findings_count = len(report.findings)
+                if report.findings:
+                    worst = min(report.findings, key=lambda f: SEVERITY_ORDER.get(f.severity, 99))
+                    job.highest_severity = worst.severity.lower()
                 if decompiled_path:
                     job.decompiled_path = decompiled_path
                 job.report = {
@@ -135,6 +139,9 @@ async def run(job_id: UUID, apk_path: str):
                     "interesting_urls": report.interesting_urls,
                     "interesting_files": report.interesting_files,
                     "tool_versions": report.tool_versions,
+                    "debuggable": report.debuggable,
+                    "allow_backup": report.allow_backup,
+                    "manifest": report.manifest,
                 }
                 job.completed_at = datetime.utcnow()
                 await q.put(("completed", "done"))

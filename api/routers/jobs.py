@@ -79,6 +79,8 @@ async def get_job(job_id: UUID, db: AsyncSession = Depends(get_db)):
         "package_name": job.package_name,
         "version_name": job.version_name,
         "obfuscation_score": job.obfuscation_score,
+        "findings_count": job.findings_count,
+        "highest_severity": job.highest_severity,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "updated_at": job.updated_at.isoformat() if job.updated_at else None,
         "completed_at": job.completed_at.isoformat() if job.completed_at else None,
@@ -87,6 +89,25 @@ async def get_job(job_id: UUID, db: AsyncSession = Depends(get_db)):
 
     if job.report:
         response.update(job.report)
+
+        # El motor (apk_forensics.py) usa "crypto_usage"; el front espera "crypto".
+        response["crypto"] = response.pop("crypto_usage", [])
+
+        # permissions viene como lista de strings; el front espera {name, dangerous}[]
+        dangerous_set = set(response.get("dangerous_permissions") or [])
+        response["permissions"] = [
+            {"name": p, "dangerous": p in dangerous_set}
+            for p in response.get("permissions") or []
+        ]
+
+        # Counts que el Overview del front necesita y que no vienen calculados
+        components = response.get("components") or {}
+        response["activities_count"] = components.get("activities", 0)
+        response["services_count"] = components.get("services", 0)
+        response["receivers_count"] = components.get("receivers", 0)
+        response["providers_count"] = components.get("providers", 0)
+        response["native_libs_count"] = len(response.get("native_libs") or [])
+        response["dex_files_count"] = len(response.get("dex_files") or [])
 
     return response
 
@@ -118,9 +139,9 @@ async def get_job_findings(
         findings = job.report.get("findings", []) or []
 
     if severity:
-        findings = [f for f in findings if f.get("severity") == severity]
+        findings = [f for f in findings if f.get("severity", "").lower() == severity.lower()]
 
-    findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.get("severity", ""), 99))
+    findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.get("severity", "").lower(), 99))
 
     total = len(findings)
     offset = (page - 1) * limit
@@ -159,6 +180,9 @@ async def list_jobs(
                 "filename": j.filename,
                 "file_size": j.file_size,
                 "package_name": j.package_name,
+                "findings_count": j.findings_count,
+                "highest_severity": j.highest_severity,
+                "obfuscation_score": j.obfuscation_score,
                 "created_at": j.created_at.isoformat() if j.created_at else None,
             }
             for j in jobs
