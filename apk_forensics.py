@@ -24,6 +24,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -174,13 +175,41 @@ def check_tool(name: str) -> Optional[str]:
     return path
 
 def run(cmd: list, cwd=None, timeout=120) -> tuple[int, str, str]:
+    # subprocess.run(timeout=...) mata solo al hijo directo. Si ese proceso
+    # generó hijos propios que heredaron los pipes de stdout/stderr (jadx/java
+    # lo hacen), matar solo al padre no cierra esos pipes y communicate() se
+    # queda esperando EOF para siempre — un cuelgue real, no un timeout.
+    # Por eso arrancamos el proceso en su propia sesión y, si hay timeout,
+    # matamos el grupo de procesos entero.
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd, timeout=timeout)
-        return r.returncode, r.stdout, r.stderr
-    except subprocess.TimeoutExpired:
-        return -1, "", "timeout"
+        proc = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
     except FileNotFoundError:
         return -1, "", f"command not found: {cmd[0]}"
+
+    try:
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return proc.returncode, stdout, stderr
+    except subprocess.TimeoutExpired:
+        try:
+            if hasattr(os, "killpg"):
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            else:
+                proc.kill()
+        except ProcessLookupError:
+            pass
+        try:
+            stdout, stderr = proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout, stderr = "", "timeout (no se pudo drenar la salida del proceso tras matarlo)"
+        return -1, stdout, stderr
 
 def hash_file(path: str) -> tuple[str, str]:
     md5 = hashlib.md5()

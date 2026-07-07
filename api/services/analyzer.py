@@ -1,4 +1,5 @@
 import asyncio
+import json
 import queue as thread_queue
 import shutil
 import tempfile
@@ -20,12 +21,33 @@ from models import Job
 # In-memory event queues for SSE progress streaming
 job_queues: dict[UUID, asyncio.Queue] = {}
 
+# Orden real de los pasos que dispara run_analysis() en apk_forensics.py.
+# El front necesita un numero (no solo "paso X"), asi que le asignamos un
+# porcentaje aproximado por paso completado.
+_STEPS = ["integrity", "structure", "manifest", "strings", "crypto", "obfuscation", "jadx"]
+_STEP_LABELS = {
+    "integrity": "Calculando hashes",
+    "structure": "Inspeccionando estructura del APK",
+    "manifest": "Analizando AndroidManifest.xml",
+    "strings": "Buscando secretos",
+    "crypto": "Detectando criptografía",
+    "obfuscation": "Evaluando ofuscación",
+    "jadx": "Decompilando con JADX",
+}
+
 
 def _analyzer_worker(apk_path: str, workdir: str, no_jadx: bool, q: thread_queue.Queue):
     """Runs the synchronous forensics analysis in a background thread."""
 
     def cb(step: str, status: str):
-        q.put(("progress", f"{step}:{status}"))
+        pct = round((_STEPS.index(step) + 1) / len(_STEPS) * 100) if step in _STEPS else 0
+        payload = json.dumps({
+            "type": "progress",
+            "progress": pct,
+            "message": _STEP_LABELS.get(step, step),
+            "module": step,
+        })
+        q.put(("progress", payload))
 
     try:
         report = run_analysis(apk_path, workdir, no_jadx, progress_callback=cb)
@@ -60,10 +82,8 @@ async def run(job_id: UUID, apk_path: str):
                 await q.put(("progress", data))
             elif typ == "success":
                 report = data
-                await q.put(("progress", "analysis_complete"))
             elif typ == "error":
                 error = data
-                await q.put(("progress", f"error:{data}"))
         except thread_queue.Empty:
             await asyncio.sleep(0.1)
 

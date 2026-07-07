@@ -66,6 +66,7 @@ export interface JobDetails extends Job {
   obfuscation_indicators?: string[];
   debuggable?: boolean;
   allow_backup?: boolean;
+  severity_counts?: Record<"critical" | "high" | "medium" | "low" | "info", number>;
 }
 
 export interface ProgressEvent {
@@ -178,14 +179,25 @@ export function subscribeToProgress(
 ): EventSource {
   const es = new EventSource(`${API_BASE}/api/v1/jobs/${id}/progress`);
 
-  es.onmessage = (event) => {
+  // El backend manda eventos SSE con "event:" explicito (progress/completed/
+  // failed/heartbeat/close), no el tipo "message" por default. onmessage
+  // solo escucha eventos SIN nombre, asi que nunca se disparaba: la barra de
+  // progreso quedaba pegada en 0% siempre, haya o no un cuelgue real atras.
+  es.addEventListener("progress", (event: MessageEvent) => {
     try {
-      const data = JSON.parse(event.data);
-      onProgress(data);
+      onProgress(JSON.parse(event.data));
     } catch {
       // ignore parse errors
     }
-  };
+  });
+
+  es.addEventListener("completed", () => {
+    onProgress({ type: "completed", progress: 100 });
+  });
+
+  es.addEventListener("failed", (event: MessageEvent) => {
+    onProgress({ type: "error", progress: 0, message: event.data });
+  });
 
   return es;
 }
@@ -241,6 +253,32 @@ export async function deleteJob(id: string): Promise<void> {
     const error = await response.json().catch(() => ({ detail: "Failed to delete job" }));
     throw new Error(error.detail || `Failed to delete job: ${response.statusText}`);
   }
+}
+
+// A diferencia de un <a href> directo al backend, esto valida la respuesta y
+// deja al llamador mostrar un error real si el reporte no se pudo generar,
+// en vez de fallar en silencio.
+export async function exportJob(
+  id: string,
+  format: "json" | "html" | "md",
+  filename: string
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/v1/jobs/${id}/export?format=${format}`);
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: "Failed to export report" }));
+    throw new Error(error.detail || `Failed to export report: ${response.statusText}`);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export interface FileNode {
