@@ -19,6 +19,11 @@ Frontend de la plataforma de análisis forense de archivos APK. Proporciona una 
 
 - **Node.js 20+**
 - **npm** (incluido con Node.js)
+- El backend (`api/`) tiene que estar corriendo en un entorno **POSIX (WSL/Linux/macOS)**,
+  no en Windows nativo — `apktool`, `aapt` y `jadx` no se pueden invocar correctamente
+  desde ahí (ver el README de la raíz del repo). Si el backend corre en Windows sin WSL,
+  la app va a funcionar pero los resultados de cada análisis van a venir incompletos
+  (sin manifest, permisos, secretos ni criptografía).
 
 ## Setup paso a paso
 
@@ -172,3 +177,11 @@ Aspectos clave:
 
 - Verifica que `middleware.ts` esté en la raíz de `web/` (no dentro de `src/`).
 - Revisa que `src/i18n/routing.ts` defina correctamente `locales` y `defaultLocale`.
+
+### La barra de progreso se queda pegada en 0%
+
+- Confirmá que estás en una versión del frontend con el fix de `subscribeToProgress`
+  (escucha `addEventListener("progress"/"completed"/"failed", ...)`, no `onmessage`).
+- Un análisis de un APK grande con `jadx` puede tardar varios minutos — es esperable.
+  Si pasan más de ~5 minutos sin que cambie de estado, revisá los logs del backend:
+  puede ser un cuelgue real de una herramienta externa (`apktool`/`jadx`), no del frontend.

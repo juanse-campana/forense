@@ -3,6 +3,15 @@
 Framework de análisis estático automatizado para investigación forense y CTF.
 Optimizado para **Windows + WSL (Ubuntu)**.
 
+> ⚠️ **`apktool`, `aapt` y `jadx` necesitan correr en un entorno POSIX (WSL/Linux/macOS).**
+> El framework invoca estas herramientas vía `subprocess`, y en Windows nativo el
+> `.bat` con el que se instalan normalmente no se puede ejecutar así (falla en
+> silencio). Si corrés `apk_forensics.py` directo en Windows sin WSL, vas a
+> tener igual los hashes y la estructura del ZIP, pero el manifest, los
+> secretos, la criptografía y la ofuscación van a quedar sin analizar. Usá
+> siempre WSL (`setup_wsl.sh`) para un análisis completo, incluso si el
+> archivo del APK vive en el filesystem de Windows.
+
 ---
 
 ## Instalación rápida
@@ -120,7 +129,23 @@ APK
 
 ## APKs de prueba para CTF
 
-Fuentes recomendadas de APKs legales para practicar:
+Este repo incluye `novabank-demo-vulnerable.apk` en la raíz: un APK mínimo
+(app ficticia "NovaBank", sin librerías reales de terceros) armado a propósito
+para disparar todos los módulos del framework de forma limpia — sin el ruido
+de falsos positivos que genera analizar una app real grande. Pensado para
+demos y presentaciones:
+
+```bash
+python3 apk_forensics.py novabank-demo-vulnerable.apk
+```
+
+Dispara, a propósito: `debuggable=true`, `allowBackup=true`, 5 componentes
+exportados sin permisos, 16 permisos peligrosos, secretos hardcodeados
+(password, AWS creds, API keys, clave privada RSA, connection string),
+17 usos de criptografía débil (MD5, SHA1, ECB, TrustManager/CertificatePinner
+vacíos) y carga dinámica de código (`DexClassLoader`).
+
+Fuentes recomendadas de APKs reales legales para practicar:
 
 - **InjuredAndroid** — https://github.com/B3nac/InjuredAndroid
 - **DIVA Android** — https://github.com/payatu/diva-android
