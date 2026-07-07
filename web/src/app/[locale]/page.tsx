@@ -33,6 +33,12 @@ type UploadState =
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
 
+// El analisis sigue corriendo en el backend aunque el usuario navegue a otra
+// pagina (Historial, etc.) y vuelva - sin esto, al volver el componente se
+// remonta con estado "idle" y parece que no hay nada corriendo, cuando en
+// realidad el job sigue procesando atras.
+const ACTIVE_JOB_KEY = "forense_active_job_id";
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
@@ -97,6 +103,7 @@ export default function UploadPage() {
         setState({ status: "uploading", file, progress });
       });
       currentJobRef.current = job;
+      sessionStorage.setItem(ACTIVE_JOB_KEY, job.id);
       setState({
         status: "analyzing",
         job,
@@ -110,6 +117,37 @@ export default function UploadPage() {
       });
     }
   };
+
+  // Al montar (por ej. volviendo de Historial), si habia un analisis en
+  // curso lo reconectamos en vez de mostrar la pantalla vacia.
+  useEffect(() => {
+    const storedId = sessionStorage.getItem(ACTIVE_JOB_KEY);
+    if (!storedId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const job = await getJob(storedId);
+        if (cancelled) return;
+        if (job.status === "pending" || job.status === "running") {
+          currentJobRef.current = job;
+          setState({
+            status: "analyzing",
+            job,
+            progress: 0,
+            message: t("upload.analyzing"),
+          });
+        } else {
+          sessionStorage.removeItem(ACTIVE_JOB_KEY);
+        }
+      } catch {
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const analyzingJobId =
     state.status === "analyzing" ? state.job.id : null;
@@ -131,11 +169,13 @@ export default function UploadPage() {
         );
       }
       if (event.type === "completed") {
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
         setState({
           status: "completed",
           job: currentJobRef.current || { id: analyzingJobId, status: "completed", filename: "" },
         });
       } else if (event.type === "error") {
+        sessionStorage.removeItem(ACTIVE_JOB_KEY);
         setState({
           status: "error",
           message: event.message || t("upload.analysisError"),
@@ -147,8 +187,10 @@ export default function UploadPage() {
       try {
         const updatedJob = await getJob(analyzingJobId);
         if (updatedJob.status === "completed") {
+          sessionStorage.removeItem(ACTIVE_JOB_KEY);
           setState({ status: "completed", job: updatedJob });
         } else if (updatedJob.status === "failed") {
+          sessionStorage.removeItem(ACTIVE_JOB_KEY);
           setState({ status: "error", message: t("upload.analysisError") });
         }
       } catch {
@@ -163,6 +205,7 @@ export default function UploadPage() {
   }, [analyzingJobId, t]);
 
   const reset = () => {
+    sessionStorage.removeItem(ACTIVE_JOB_KEY);
     setState({ status: "idle" });
     setIsDragging(false);
     currentJobRef.current = null;
