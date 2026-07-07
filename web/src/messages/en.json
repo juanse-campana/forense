@@ -23,7 +23,8 @@
     "fileTooLarge": "File exceeds the 500MB limit",
     "serverError": "Server error. Please try again.",
     "analysisError": "Error during analysis",
-    "tryAgain": "Try again"
+    "tryAgain": "Try again",
+    "cancelNote": "The analysis keeps running in the background. You can check it later in History."
   },
   "history": {
     "title": "Analysis History",
@@ -80,6 +81,13 @@
     "exportJson": "JSON",
     "exportHtml": "HTML",
     "exportMarkdown": "Markdown",
+    "exportError": "Could not generate the report. Try again.",
+    "severitySummary": "Risk summary",
+    "severityHelp": "Critical and High need immediate attention (data leaks, directly exploitable insecure code). Medium are risky configurations that aren't always directly exploitable. Low and Info are minor or informational signals.",
+    "sdkHelp": "Min SDK: the oldest Android version the app runs on (older = more unpatched OS vulnerabilities). Target SDK: how up to date it is with Android's security policies (a low one relaxes protections Android enforces by default on newer versions).",
+    "obfuscationHelp": "A 0-100 score combining: shortened class names (typical of ProGuard/R8), heavy use of reflection, and dynamic code loading (DexClassLoader). It doesn't measure how 'secure' the app is, just how hard its code is to read for an attacker (or for you).",
+    "debuggableHelp": "If Yes, anyone can attach a debugger (adb) to the app in production and read its memory live. Should never be Yes in a release build.",
+    "allowBackupHelp": "If Yes, the app's private data can be extracted with 'adb backup' without needing root on the device.",
     "hashes": "Hashes",
     "metadata": "Metadata",
     "components": "Components",

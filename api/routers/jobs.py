@@ -109,6 +109,15 @@ async def get_job(job_id: UUID, db: AsyncSession = Depends(get_db)):
         response["native_libs_count"] = len(response.get("native_libs") or [])
         response["dex_files_count"] = len(response.get("dex_files") or [])
 
+        # Desglose de hallazgos por severidad, para mostrar el riesgo de un vistazo
+        # sin que el front tenga que pedir cada filtro por separado.
+        severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+        for f in response.get("findings") or []:
+            sev = (f.get("severity") or "").lower()
+            if sev in severity_counts:
+                severity_counts[sev] += 1
+        response["severity_counts"] = severity_counts
+
     return response
 
 

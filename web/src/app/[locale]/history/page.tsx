@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ClipboardList, Trash2 } from "lucide-react";
+import { ClipboardList, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { StatusIndicator } from "@/components/ui/status-indicator";
@@ -21,6 +21,43 @@ import { getJobs, deleteJob, type PaginatedJobs } from "@/lib/api";
 const statusFilters = ["all", "pending", "running", "completed", "failed"] as const;
 
 type StatusFilter = (typeof statusFilters)[number];
+
+type SortColumn = "filename" | "findings" | "severity" | "date";
+
+const severityRank: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+  info: 4,
+};
+
+function SortableHead({
+  label,
+  column,
+  active,
+  direction,
+  onSort,
+}: {
+  label: string;
+  column: SortColumn;
+  active: boolean;
+  direction: "asc" | "desc";
+  onSort: (column: SortColumn) => void;
+}) {
+  const Icon = !active ? ArrowUpDown : direction === "asc" ? ArrowUp : ArrowDown;
+  return (
+    <TableHead>
+      <button
+        onClick={() => onSort(column)}
+        className={`flex items-center gap-1 hover:text-on-surface ${active ? "text-on-surface" : ""}`}
+      >
+        {label}
+        <Icon size={12} />
+      </button>
+    </TableHead>
+  );
+}
 
 function formatDate(dateString?: string): string {
   if (!dateString) return "-";
@@ -45,6 +82,17 @@ export default function HistoryPage() {
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [sortColumn, setSortColumn] = useState<SortColumn | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+
+  const toggleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(column);
+      setSortDirection("desc");
+    }
+  };
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -82,6 +130,39 @@ export default function HistoryPage() {
   const from = data && data.total > 0 ? (data.page - 1) * data.limit + 1 : 0;
   const to = data && data.total > 0 ? Math.min(data.page * data.limit, data.total) : 0;
 
+  // Ordena solo la pagina actual ya cargada (sin pedir de nuevo al backend) -
+  // suficiente para que el usuario pueda priorizar por severidad/hallazgos
+  // sin tener que mirar fila por fila.
+  const sortedItems = React.useMemo(() => {
+    if (!data || !sortColumn) return data?.items ?? [];
+    const items = [...data.items];
+    const dir = sortDirection === "asc" ? 1 : -1;
+    items.sort((a, b) => {
+      switch (sortColumn) {
+        case "filename":
+          return dir * a.filename.localeCompare(b.filename);
+        case "findings":
+          return dir * ((a.findings_count ?? -1) - (b.findings_count ?? -1));
+        case "severity":
+          // Invertido a proposito: "desc" (default) significa "mas grave primero"
+          // (rank mas bajo = critical), no "numero de rank mas alto primero".
+          return (
+            -dir *
+            ((severityRank[a.highest_severity ?? ""] ?? 99) -
+              (severityRank[b.highest_severity ?? ""] ?? 99))
+          );
+        case "date":
+          return (
+            dir *
+            (new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime())
+          );
+        default:
+          return 0;
+      }
+    });
+    return items;
+  }, [data, sortColumn, sortDirection]);
+
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold text-on-surface">{t("history.title")}</h1>
@@ -117,17 +198,41 @@ export default function HistoryPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t("history.columns.filename")}</TableHead>
+                <SortableHead
+                  label={t("history.columns.filename")}
+                  column="filename"
+                  active={sortColumn === "filename"}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                />
                 <TableHead>{t("history.columns.package")}</TableHead>
                 <TableHead>{t("history.columns.status")}</TableHead>
-                <TableHead>{t("history.columns.findings")}</TableHead>
-                <TableHead>{t("history.columns.severity")}</TableHead>
-                <TableHead>{t("history.columns.date")}</TableHead>
+                <SortableHead
+                  label={t("history.columns.findings")}
+                  column="findings"
+                  active={sortColumn === "findings"}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                />
+                <SortableHead
+                  label={t("history.columns.severity")}
+                  column="severity"
+                  active={sortColumn === "severity"}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                />
+                <SortableHead
+                  label={t("history.columns.date")}
+                  column="date"
+                  active={sortColumn === "date"}
+                  direction={sortDirection}
+                  onSort={toggleSort}
+                />
                 <TableHead className="text-right">{t("history.columns.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.items.map((job, index) => (
+              {sortedItems.map((job, index) => (
                 <TableRow
                   key={job.id}
                   className={index % 2 === 1 ? "bg-surface-container-low/50" : ""}
@@ -145,7 +250,16 @@ export default function HistoryPage() {
                   <TableCell>{job.findings_count ?? "-"}</TableCell>
                   <TableCell>
                     {job.highest_severity ? (
-                      <Badge variant={job.highest_severity.toLowerCase()}>
+                      <Badge
+                        variant={
+                          job.highest_severity.toLowerCase() as
+                            | "critical"
+                            | "high"
+                            | "medium"
+                            | "low"
+                            | "info"
+                        }
+                      >
                         {t(`severity.${job.highest_severity.toLowerCase()}`)}
                       </Badge>
                     ) : (

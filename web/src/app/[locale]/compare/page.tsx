@@ -106,7 +106,10 @@ function FindingsSection({
                 key={i}
                 className="flex items-start gap-2 rounded bg-surface-container-high px-3 py-2"
               >
-                <Badge variant={f.severity.toLowerCase()} className="mt-0.5 shrink-0">
+                <Badge
+                  variant={f.severity.toLowerCase() as "critical" | "high" | "medium" | "low" | "info"}
+                  className="mt-0.5 shrink-0"
+                >
                   {t(`severity.${f.severity.toLowerCase()}`)}
                 </Badge>
                 <div className="min-w-0">

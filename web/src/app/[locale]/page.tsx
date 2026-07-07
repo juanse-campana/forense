@@ -283,6 +283,14 @@ export default function UploadPage() {
                 </span>
               </div>
               <Progress value={state.progress} variant="pulse" />
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs text-on-surface-variant">
+                  {t("upload.cancelNote")}
+                </p>
+                <Button variant="ghost" size="sm" onClick={reset}>
+                  {t("common.cancel")}
+                </Button>
+              </div>
             </div>
           )}
 

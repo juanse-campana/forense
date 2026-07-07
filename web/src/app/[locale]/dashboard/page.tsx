@@ -167,7 +167,16 @@ export default function DashboardPage() {
                       <span className="truncate text-sm font-medium text-on-surface">
                         {job.filename}
                       </span>
-                      <Badge variant={(job.highest_severity || "info").toLowerCase()}>
+                      <Badge
+                        variant={
+                          (job.highest_severity || "info").toLowerCase() as
+                            | "critical"
+                            | "high"
+                            | "medium"
+                            | "low"
+                            | "info"
+                        }
+                      >
                         {job.highest_severity
                           ? t(`severity.${job.highest_severity.toLowerCase()}`)
                           : "-"}

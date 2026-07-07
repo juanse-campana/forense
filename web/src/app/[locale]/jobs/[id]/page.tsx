@@ -9,12 +9,14 @@ import {
   Download,
   Shield,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { StatusIndicator } from "@/components/ui/status-indicator";
+import { Tooltip } from "@/components/ui/tooltip";
 import {
   Table,
   TableBody,
@@ -23,9 +25,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { getJob, getJobFindings, type JobDetails, type Finding } from "@/lib/api";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getJob, getJobFindings, exportJob, type JobDetails, type Finding } from "@/lib/api";
 
 const tabs = [
   "overview",
@@ -92,18 +92,50 @@ function ExportButton({
   id,
   format,
   label,
+  filename,
 }: {
   id: string;
-  format: string;
+  format: "json" | "html" | "md";
   label: string;
+  filename: string;
 }) {
+  const t = useTranslations();
+  const [state, setState] = useState<"idle" | "loading" | "error">("idle");
+
+  const handleClick = async () => {
+    setState("loading");
+    try {
+      await exportJob(id, format, filename);
+      setState("idle");
+    } catch {
+      // Antes esto era un <a href> plano: si el endpoint fallaba, el usuario
+      // no veia nada. Ahora se ve un mensaje real y se puede reintentar.
+      setState("error");
+      setTimeout(() => setState("idle"), 4000);
+    }
+  };
+
   return (
-    <Button variant="secondary" size="sm" asChild>
-      <a href={`${API_BASE}/api/v1/jobs/${id}/report.${format}`} download>
-        <Download size={16} />
+    <div className="relative">
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={handleClick}
+        disabled={state === "loading"}
+      >
+        {state === "loading" ? (
+          <Loader2 size={16} className="animate-spin" />
+        ) : (
+          <Download size={16} />
+        )}
         {label}
-      </a>
-    </Button>
+      </Button>
+      {state === "error" && (
+        <span className="absolute left-0 top-full z-10 mt-1 whitespace-nowrap rounded bg-error/15 px-2 py-1 text-xs text-error">
+          {t("results.exportError")}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -151,7 +183,10 @@ function OverviewTab({ job }: { job: JobDetails }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t("results.sdk")}</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">
+            {t("results.sdk")}
+            <Tooltip text={t("results.sdkHelp")} />
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between gap-2">
@@ -210,14 +245,40 @@ function OverviewTab({ job }: { job: JobDetails }) {
   );
 }
 
+function SeverityStrip({ counts }: { counts?: JobDetails["severity_counts"] }) {
+  const t = useTranslations();
+  const severities = ["critical", "high", "medium", "low", "info"] as const;
+  const total = severities.reduce((sum, s) => sum + (counts?.[s] ?? 0), 0);
+
+  if (!counts || total === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded bg-surface p-4 outline outline-1 outline-outline-variant">
+      <span className="flex items-center gap-1.5 text-sm font-medium text-on-surface-variant">
+        {t("results.severitySummary")}
+        <Tooltip text={t("results.severityHelp")} />
+      </span>
+      {severities.map((sev) =>
+        counts[sev] > 0 ? (
+          <Badge key={sev} variant={sev}>
+            {t(`severity.${sev}`)} · {counts[sev]}
+          </Badge>
+        ) : null
+      )}
+    </div>
+  );
+}
+
 function FindingsTab({
   jobId,
   severityFilter,
   setSeverityFilter,
+  severityCounts,
 }: {
   jobId: string;
   severityFilter: (typeof severityFilters)[number];
   setSeverityFilter: (value: (typeof severityFilters)[number]) => void;
+  severityCounts?: JobDetails["severity_counts"];
 }) {
   const t = useTranslations();
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -291,16 +352,25 @@ function FindingsTab({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap gap-2">
-          {severityFilters.map((filter) => (
-            <Button
-              key={filter}
-              variant={severityFilter === filter ? "primary" : "ghost"}
-              size="sm"
-              onClick={() => setSeverityFilter(filter)}
-            >
-              {t(`results.filters.${filter}`)}
-            </Button>
-          ))}
+          {severityFilters.map((filter) => {
+            const count =
+              filter === "all"
+                ? Object.values(severityCounts ?? {}).reduce((a, b) => a + b, 0)
+                : severityCounts?.[filter];
+            return (
+              <Button
+                key={filter}
+                variant={severityFilter === filter ? "primary" : "ghost"}
+                size="sm"
+                onClick={() => setSeverityFilter(filter)}
+              >
+                {t(`results.filters.${filter}`)}
+                {count !== undefined && (
+                  <span className="ml-1 opacity-70">({count})</span>
+                )}
+              </Button>
+            );
+          })}
         </div>
         <span className="text-sm text-on-surface-variant">
           {findings.length} {t("history.columns.findings")}
@@ -332,7 +402,18 @@ function FindingsTab({
                     className={index % 2 === 1 ? "bg-surface-container-low/50" : ""}
                   >
                     <TableCell>
-                      <Badge variant={finding.severity.toLowerCase()}>{t(`severity.${finding.severity.toLowerCase()}`)}</Badge>
+                      <Badge
+                        variant={
+                          finding.severity.toLowerCase() as
+                            | "critical"
+                            | "high"
+                            | "medium"
+                            | "low"
+                            | "info"
+                        }
+                      >
+                        {t(`severity.${finding.severity.toLowerCase()}`)}
+                      </Badge>
                     </TableCell>
                     <TableCell>{finding.category}</TableCell>
                     <TableCell>{finding.title}</TableCell>
@@ -545,7 +626,10 @@ function ManifestTab({ job }: { job: JobDetails }) {
               job.debuggable ? "text-error" : "text-secondary"
             }`}
           >
-            <span className="font-medium">{t("results.debuggable")}:</span>
+            <span className="flex items-center gap-1 font-medium">
+              {t("results.debuggable")}:
+              <Tooltip text={t("results.debuggableHelp")} />
+            </span>
             {job.debuggable ? t("common.confirm") : t("common.cancel")}
           </div>
           <div
@@ -553,7 +637,10 @@ function ManifestTab({ job }: { job: JobDetails }) {
               job.allow_backup ? "text-warning" : "text-secondary"
             }`}
           >
-            <span className="font-medium">{t("results.allowBackup")}:</span>
+            <span className="flex items-center gap-1 font-medium">
+              {t("results.allowBackup")}:
+              <Tooltip text={t("results.allowBackupHelp")} />
+            </span>
             {job.allow_backup ? t("common.confirm") : t("common.cancel")}
           </div>
         </div>
@@ -571,7 +658,10 @@ function ObfuscationTab({ job }: { job: JobDetails }) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{t("results.obfuscation")}</CardTitle>
+          <CardTitle className="flex items-center gap-1.5 text-base">
+            {t("results.obfuscation")}
+            <Tooltip text={t("results.obfuscationHelp")} />
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex flex-col items-center gap-4 py-6">
@@ -704,26 +794,39 @@ export default function JobResultsPage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <ExportButton id={id} format="json" label={t("results.exportJson")} />
-          <ExportButton id={id} format="html" label={t("results.exportHtml")} />
-          <ExportButton id={id} format="md" label={t("results.exportMarkdown")} />
+          <ExportButton id={id} format="json" label={t("results.exportJson")} filename={job.apk_name || job.filename} />
+          <ExportButton id={id} format="html" label={t("results.exportHtml")} filename={job.apk_name || job.filename} />
+          <ExportButton id={id} format="md" label={t("results.exportMarkdown")} filename={job.apk_name || job.filename} />
         </div>
       </div>
 
+      <SeverityStrip counts={job.severity_counts} />
+
       <div className="flex flex-wrap gap-2 border-b border-outline-variant/50 pb-1">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={`rounded-t px-4 py-2 text-sm font-medium transition-colors ${
-              activeTab === tab
-                ? "bg-surface text-primary"
-                : "text-on-surface-variant hover:text-on-surface"
-            }`}
-          >
-            {t(`results.tabs.${tab}`)}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const count =
+            tab === "findings"
+              ? job.findings_count
+              : tab === "permissions"
+              ? job.permissions?.length
+              : tab === "crypto"
+              ? job.crypto?.length
+              : undefined;
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`rounded-t px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab
+                  ? "bg-surface text-primary"
+                  : "text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              {t(`results.tabs.${tab}`)}
+              {!!count && <span className="ml-1 opacity-70">({count})</span>}
+            </button>
+          );
+        })}
       </div>
 
       <div className="min-h-[300px]">
@@ -733,6 +836,7 @@ export default function JobResultsPage() {
             jobId={id}
             severityFilter={severityFilter}
             setSeverityFilter={setSeverityFilter}
+            severityCounts={job.severity_counts}
           />
         )}
         {activeTab === "permissions" && <PermissionsTab job={job} />}

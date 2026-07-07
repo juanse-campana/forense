@@ -7,9 +7,11 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
+        // Rampa de severidad con tonos distinguibles entre si (rojo -> naranja -> amarillo -> azul -> gris),
+        // no solo variaciones de un mismo rojo (critical/high antes eran casi indistinguibles).
         critical: "bg-[#EF4444]/15 text-[#EF4444]",
-        high: "bg-[#F87171]/15 text-[#F87171]",
-        medium: "bg-[#F59E0B]/15 text-[#F59E0B]",
+        high: "bg-[#F97316]/15 text-[#F97316]",
+        medium: "bg-[#EAB308]/15 text-[#EAB308]",
         low: "bg-[#3B82F6]/15 text-[#3B82F6]",
         info: "bg-[#6B7280]/15 text-[#6B7280]",
       },

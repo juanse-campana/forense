@@ -23,7 +23,8 @@
     "fileTooLarge": "El archivo excede el límite de 500MB",
     "serverError": "Error del servidor. Intenta de nuevo.",
     "analysisError": "Error durante el análisis",
-    "tryAgain": "Intentar de nuevo"
+    "tryAgain": "Intentar de nuevo",
+    "cancelNote": "El análisis sigue en segundo plano. Podés verlo después en Historial."
   },
   "history": {
     "title": "Historial de Análisis",
@@ -80,6 +81,13 @@
     "exportJson": "JSON",
     "exportHtml": "HTML",
     "exportMarkdown": "Markdown",
+    "exportError": "No se pudo generar el reporte. Intentá de nuevo.",
+    "severitySummary": "Resumen de riesgo",
+    "severityHelp": "Critical y High requieren atención inmediata (fugas de datos, código inseguro explotable). Medium son configuraciones riesgosas pero no siempre explotables directamente. Low e Info son señales menores o informativas.",
+    "sdkHelp": "SDK mínimo: la versión más vieja de Android donde corre la app (más vieja = más vulnerabilidades de SO sin parchear). SDK objetivo: qué tan al día está con las políticas de seguridad de Android (uno bajo relaja protecciones que Android aplica por defecto en versiones nuevas).",
+    "obfuscationHelp": "Puntaje 0-100 que combina: nombres de clase acortados (típico de ProGuard/R8), uso intensivo de reflection, y carga dinámica de código (DexClassLoader). No mide qué tan 'segura' es la app, sino qué tan difícil es leer su código para un atacante (o para vos).",
+    "debuggableHelp": "Si está en Sí, cualquiera puede conectar un depurador (adb) a la app en producción y leer su memoria en vivo. Nunca debería estar en Sí en un build de release.",
+    "allowBackupHelp": "Si está en Sí, los datos privados de la app se pueden extraer con 'adb backup' sin necesitar root en el dispositivo.",
     "hashes": "Hashes",
     "metadata": "Metadatos",
     "components": "Componentes",
