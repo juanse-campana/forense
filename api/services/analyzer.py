@@ -60,48 +60,60 @@ async def run(job_id: UUID, apk_path: str):
     """Async wrapper that runs analysis in a thread and updates the DB."""
     q = asyncio.Queue()
     job_queues[job_id] = q
-
     workdir = tempfile.mkdtemp(prefix=f"apk_{job_id}_")
-    tq = thread_queue.Queue()
 
-    thread = threading.Thread(
-        target=_analyzer_worker,
-        args=(apk_path, workdir, False, tq),
-    )
-    thread.start()
+    try:
+        tq = thread_queue.Queue()
+        thread = threading.Thread(
+            target=_analyzer_worker,
+            args=(apk_path, workdir, False, tq),
+        )
+        thread.start()
 
-    report = None
-    error = None
+        report = None
+        error = None
+        loop = asyncio.get_running_loop()
 
-    # Drain thread queue into async queue
-    while thread.is_alive() or not tq.empty():
-        try:
-            msg = tq.get(timeout=0.5)
-            typ, data = msg
-            if typ == "progress":
-                await q.put(("progress", data))
-            elif typ == "success":
-                report = data
-            elif typ == "error":
-                error = data
-        except thread_queue.Empty:
-            await asyncio.sleep(0.1)
+        # Drain thread queue into async queue. tq.get(timeout=...) es una llamada
+        # bloqueante de verdad - si se llama directo (sin await) acá, congela el
+        # event loop ENTERO por hasta 0.5s en cada vuelta durante todo el
+        # analisis, y nadie mas puede ser atendido mientras tanto (esto era la
+        # causa real de que "se hiciera lento todo el sitio" mientras un
+        # analisis corria). Se manda a un hilo del executor para que el
+        # bloqueo no sea sobre el loop.
+        while thread.is_alive() or not tq.empty():
+            try:
+                msg = await loop.run_in_executor(None, tq.get, True, 0.5)
+                typ, data = msg
+                if typ == "progress":
+                    await q.put(("progress", data))
+                elif typ == "success":
+                    report = data
+                elif typ == "error":
+                    error = data
+            except thread_queue.Empty:
+                await asyncio.sleep(0.1)
 
-    thread.join()
+        thread.join()
 
-    # Persist JADX output if available
-    jadx_source = Path(workdir) / "jadx_out"
-    upload_dir = Path(apk_path).parent
-    jadx_dest = upload_dir / "jadx_out"
-    decompiled_path = None
-    if jadx_source.exists():
-        if jadx_dest.exists():
-            shutil.rmtree(jadx_dest, ignore_errors=True)
-        shutil.copytree(jadx_source, jadx_dest)
-        decompiled_path = str(jadx_dest)
+        # Persist JADX output si esta disponible. En WSL2, uploads/ vive en el
+        # filesystem 9p montado en /mnt/c/, que es flaky copiando miles de
+        # archivos chicos de una — un fallo acá NO puede tirar abajo el
+        # guardado del reporte ya calculado (antes este bloque estaba fuera
+        # del try/except de la DB y una excepcion acá dejaba el job "pending"
+        # para siempre, sin marcar error ni loguear nada util).
+        decompiled_path = None
+        if report is not None:
+            jadx_source = Path(workdir) / "jadx_out"
+            if jadx_source.exists():
+                try:
+                    jadx_dest = Path(apk_path).parent / "jadx_out"
+                    shutil.copytree(jadx_source, jadx_dest, dirs_exist_ok=True)
+                    decompiled_path = str(jadx_dest)
+                except Exception:
+                    pass  # el reporte se guarda igual; el explorador de codigo queda sin datos
 
-    async with AsyncSessionLocal() as db:
-        try:
+        async with AsyncSessionLocal() as db:
             result = await db.execute(select(Job).where(Job.id == job_id))
             job = result.scalar_one()
 
@@ -167,11 +179,23 @@ async def run(job_id: UUID, apk_path: str):
                 await q.put(("completed", "done"))
 
             await db.commit()
-        except Exception as db_err:
-            await db.rollback()
-            await q.put(("failed", str(db_err)))
-        finally:
-            shutil.rmtree(workdir, ignore_errors=True)
-            await q.put(("close", ""))
-            await asyncio.sleep(2)
-            job_queues.pop(job_id, None)
+    except Exception as e:
+        # Red de seguridad final: sea cual sea el punto del pipeline que
+        # reviente, el job NO puede quedar "pending" para siempre sin
+        # explicacion. Se marca failed con el motivo real.
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(select(Job).where(Job.id == job_id))
+                job = result.scalar_one_or_none()
+                if job and job.status == "pending":
+                    job.status = "failed"
+                    job.error_message = f"Error inesperado: {e}"
+                    await db.commit()
+        except Exception:
+            pass
+        await q.put(("failed", str(e)))
+    finally:
+        shutil.rmtree(workdir, ignore_errors=True)
+        await q.put(("close", ""))
+        await asyncio.sleep(2)
+        job_queues.pop(job_id, None)
