@@ -4,7 +4,7 @@ import queue as thread_queue
 import shutil
 import tempfile
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -17,17 +17,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from apk_forensics import run_analysis, SEVERITY_ORDER
 from database import AsyncSessionLocal
 from models import Job
+from services.owasp_classifier import classify_findings
+from services.cve_lookup import check_libraries_for_cves
+from services.cve_details import enrich_libraries_with_nvd
 
 # In-memory event queues for SSE progress streaming
 job_queues: dict[UUID, asyncio.Queue] = {}
 
 # Orden real de los pasos que dispara run_analysis() en apk_forensics.py.
-# El front necesita un numero (no solo "paso X"), asi que le asignamos un
-# porcentaje aproximado por paso completado.
-_STEPS = ["integrity", "structure", "manifest", "strings", "crypto", "obfuscation", "jadx"]
+# TIENE que coincidir con los progress_callback() del motor: si un paso
+# dispara callback y no esta en esta lista, cae al fallback de 0% y la
+# barra de progreso retrocede visualmente en medio del analisis.
+_STEPS = ["integrity", "structure", "dependencies", "manifest", "strings", "crypto", "obfuscation", "jadx"]
 _STEP_LABELS = {
     "integrity": "Calculando hashes",
     "structure": "Inspeccionando estructura del APK",
+    "dependencies": "Identificando librerías de terceros",
     "manifest": "Analizando AndroidManifest.xml",
     "strings": "Buscando secretos",
     "crypto": "Detectando criptografía",
@@ -162,6 +167,7 @@ async def run(job_id: UUID, apk_path: str):
                             "file": f.file,
                             "line": f.line,
                             "evidence": f.evidence,
+                            "rule_id": f.rule_id,
                         }
                         for f in report.findings
                     ],
@@ -174,8 +180,30 @@ async def run(job_id: UUID, apk_path: str):
                     "debuggable": report.debuggable,
                     "allow_backup": report.allow_backup,
                     "manifest": report.manifest,
+                    "third_party_libraries": report.third_party_libraries,
                 }
-                job.completed_at = datetime.utcnow()
+
+                # Clasificacion OWASP: estatica, solo un SELECT (ver
+                # owasp_classifier.py). CVEs de librerias: dinamico, pega a
+                # OSV.dev solo para lo que no este en cache (ver cve_lookup.py).
+                # Detalle de cada CVE contra el NVD: tambien cache-aside, con
+                # API key opcional y tope por analisis (ver cve_details.py).
+                # Un fallo acá no debe tirar abajo el guardado del reporte -
+                # ya lo tenemos calculado, seria absurdo perderlo por esto.
+                try:
+                    await classify_findings(job.report["findings"], db)
+                except Exception:
+                    pass
+                try:
+                    await check_libraries_for_cves(job.report["third_party_libraries"], db)
+                except Exception:
+                    pass
+                try:
+                    await enrich_libraries_with_nvd(job.report["third_party_libraries"], db)
+                except Exception:
+                    pass
+
+                job.completed_at = datetime.now(timezone.utc)
                 await q.put(("completed", "done"))
 
             await db.commit()

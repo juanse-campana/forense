@@ -72,6 +72,11 @@ class Finding:
     file: str = ""
     line: int = 0
     evidence: str = ""
+    # Identificador estable del tipo de hallazgo (ej. "SECRET_HARDCODED_PASSWORD").
+    # A diferencia de `title`, que puede tener texto dinamico ("Componente
+    # exportado: activity: .Foo"), rule_id nunca cambia - es lo que se usa
+    # para mapear cada hallazgo a su categoria del OWASP Mobile Top 10.
+    rule_id: str = ""
 
 @dataclass
 class ForensicsReport:
@@ -103,23 +108,27 @@ class ForensicsReport:
     debuggable: bool = False
     allow_backup: bool = False
     manifest: str = ""
+    third_party_libraries: list = field(default_factory=list)
 
 # ──────────────────────────────────────────────
 #  Patrones de detección
 # ──────────────────────────────────────────────
+#  Cada tupla: (regex, titulo, severidad, rule_id). El rule_id es lo que
+#  usa el clasificador OWASP para mapear el hallazgo a una categoria del
+#  Mobile Top 10 (ver api/services/owasp_classifier.py y la migracion 004).
 SECRET_PATTERNS = [
-    (r'(?i)(api[_\-]?key|apikey)\s*[:=]\s*["\']?([A-Za-z0-9_\-]{16,})',     "API Key",      "HIGH"),
-    (r'(?i)(secret[_\-]?key|secret)\s*[:=]\s*["\']?([A-Za-z0-9+/=_\-]{16,})','Secret Key',   "HIGH"),
-    (r'(?i)(password|passwd|pwd)\s*[:=]\s*["\']?([^"\';\s]{6,})["\']?',       "Hardcoded Password","CRITICAL"),
-    (r'(?i)(password|passwd)\b[^=\n]{0,20}=\s*"([^"]{6,})"',                  "Hardcoded Password","CRITICAL"),
-    (r'(?i)(token)\s*[:=]\s*["\']([A-Za-z0-9\._\-]{20,})["\']',               "Auth Token",   "HIGH"),
-    (r'(?i)(private[_\-]?key)',                                                 "Private Key",  "CRITICAL"),
-    (r'AIza[0-9A-Za-z\-_]{35}',                                                "Google API Key","HIGH"),
-    (r'(?i)BEGIN\s+(RSA|EC|DSA|OPENSSH)\s+PRIVATE',                           "Embedded Private Key","CRITICAL"),
-    (r'[A-Za-z0-9+/]{40,}={0,2}',                                             "Possible Base64 Secret","LOW"),
-    (r'(?i)(aws_access_key_id|aws_secret)',                                     "AWS Credentials","CRITICAL"),
-    (r'(?i)(firebase[_\-]?url|firebaseio\.com)',                               "Firebase URL", "MEDIUM"),
-    (r'(?i)(jdbc:|mongodb://|mysql://|postgres://)',                           "DB Connection String","HIGH"),
+    (r'(?i)(api[_\-]?key|apikey)\s*[:=]\s*["\']?([A-Za-z0-9_\-]{16,})',     "API Key",      "HIGH",     "SECRET_API_KEY"),
+    (r'(?i)(secret[_\-]?key|secret)\s*[:=]\s*["\']?([A-Za-z0-9+/=_\-]{16,})','Secret Key',   "HIGH",     "SECRET_SECRET_KEY"),
+    (r'(?i)(password|passwd|pwd)\s*[:=]\s*["\']?([^"\';\s]{6,})["\']?',       "Hardcoded Password","CRITICAL", "SECRET_HARDCODED_PASSWORD"),
+    (r'(?i)(password|passwd)\b[^=\n]{0,20}=\s*"([^"]{6,})"',                  "Hardcoded Password","CRITICAL", "SECRET_HARDCODED_PASSWORD"),
+    (r'(?i)(token)\s*[:=]\s*["\']([A-Za-z0-9\._\-]{20,})["\']',               "Auth Token",   "HIGH",     "SECRET_AUTH_TOKEN"),
+    (r'(?i)(private[_\-]?key)',                                                 "Private Key",  "CRITICAL", "SECRET_PRIVATE_KEY"),
+    (r'AIza[0-9A-Za-z\-_]{35}',                                                "Google API Key","HIGH",    "SECRET_GOOGLE_API_KEY"),
+    (r'(?i)BEGIN\s+(RSA|EC|DSA|OPENSSH)\s+PRIVATE',                           "Embedded Private Key","CRITICAL", "SECRET_EMBEDDED_PRIVATE_KEY"),
+    (r'[A-Za-z0-9+/]{40,}={0,2}',                                             "Possible Base64 Secret","LOW",  "SECRET_BASE64_POSSIBLE"),
+    (r'(?i)(aws_access_key_id|aws_secret)',                                     "AWS Credentials","CRITICAL", "SECRET_AWS_CREDENTIALS"),
+    (r'(?i)(firebase[_\-]?url|firebaseio\.com)',                               "Firebase URL", "MEDIUM",   "SECRET_FIREBASE_URL"),
+    (r'(?i)(jdbc:|mongodb://|mysql://|postgres://)',                           "DB Connection String","HIGH", "SECRET_DB_CONNECTION_STRING"),
 ]
 
 CRYPTO_PATTERNS = [
@@ -274,6 +283,69 @@ def analyze_structure(apk_path: str, report: ForensicsReport, workdir: str):
         sys.exit(1)
 
 # ──────────────────────────────────────────────
+#  Módulo 2b · Librerías de terceros (para chequeo de CVEs)
+# ──────────────────────────────────────────────
+# Prefijos de artifactId -> groupId de Maven. Curada a mano, solo SDKs de
+# Google que dejan un .properties legible con version+client (confirmado
+# extrayendolos de un APK real). Lo que no matchea ningun prefijo se
+# descarta - mejor no reportar una libreria que reportarla con un groupId
+# inventado (eso despues dispara una consulta de CVE contra el paquete
+# equivocado).
+_KNOWN_GROUP_PREFIXES = {
+    "play-services-": "com.google.android.gms",
+    "firebase-": "com.google.firebase",
+    "barcode-scanning": "com.google.mlkit",
+    "vision-": "com.google.mlkit",
+}
+
+def analyze_dependencies(workdir: str, report: ForensicsReport):
+    log("Identificando librerías de terceros...", "STEP")
+    libraries = []
+    seen = set()
+
+    for fpath in Path(workdir).rglob("*.properties"):
+        try:
+            content = fpath.read_text(errors="replace")
+        except Exception:
+            continue
+
+        version = None
+        client = None
+        for line in content.splitlines():
+            line = line.strip()
+            if line.startswith("version=") and version is None:
+                version = line.split("=", 1)[1].strip()
+            elif line.startswith("client=") and client is None:
+                client = line.split("=", 1)[1].strip()
+
+        if not version or not client:
+            continue
+
+        group_id = next(
+            (g for prefix, g in _KNOWN_GROUP_PREFIXES.items() if client.startswith(prefix)),
+            None,
+        )
+        if not group_id:
+            continue
+
+        package_name = f"{group_id}:{client}"
+        key = (package_name, version)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        libraries.append({
+            "group_id": group_id,
+            "artifact_id": client,
+            "version": version,
+            "package_name": package_name,
+            "source_file": str(fpath.relative_to(workdir)),
+        })
+
+    report.third_party_libraries = libraries
+    log(f"Librerías de terceros identificadas: {len(libraries)}", "OK")
+
+# ──────────────────────────────────────────────
 #  Módulo 3 · AndroidManifest.xml (con aapt o apktool)
 # ──────────────────────────────────────────────
 def analyze_manifest(apk_path: str, report: ForensicsReport, workdir: str):
@@ -305,6 +377,7 @@ def analyze_manifest(apk_path: str, report: ForensicsReport, workdir: str):
         report.findings.append(Finding(
             "INFO", "Setup", "apktool/aapt no encontrados",
             "Instala apktool y aapt para análisis completo del manifest.",
+            rule_id="SETUP_APKTOOL_MISSING",
         ))
 
     report.manifest = manifest_text
@@ -369,16 +442,19 @@ def _parse_manifest_xml(xml: str, report: ForensicsReport):
         report.findings.append(Finding(
             "HIGH", "Configuration", "App compilada con debuggable=true",
             "Permite adjuntar depuradores (adb) y leer memoria en producción.",
+            rule_id="CONFIG_DEBUGGABLE_TRUE",
         ))
     if report.allow_backup:
         report.findings.append(Finding(
             "MEDIUM", "Configuration", "allowBackup habilitado (o no declarado)",
             "Los datos de la app pueden extraerse con `adb backup` sin root.",
+            rule_id="CONFIG_ALLOW_BACKUP",
         ))
     if 'android:networkSecurityConfig' not in xml:
         report.findings.append(Finding(
             "MEDIUM", "Network", "Sin Network Security Config declarado",
             "La app puede aceptar CAs del sistema y CAs de usuario por defecto.",
+            rule_id="NETWORK_NO_SECURITY_CONFIG",
         ))
 
     if report.exported_components:
@@ -387,6 +463,7 @@ def _parse_manifest_xml(xml: str, report: ForensicsReport):
                 "MEDIUM", "Attack Surface", f"Componente exportado: {ec}",
                 "Componentes exportados son accesibles desde otras apps sin permisos.",
                 evidence=ec,
+                rule_id="ATTACK_SURFACE_EXPORTED_COMPONENT",
             ))
 
     log(f"Package     : {C.BOLD}{report.package_name}{C.RESET}", "OK")
@@ -432,7 +509,7 @@ def analyze_strings(workdir: str, report: ForensicsReport):
                     found_urls.add(url)
 
             # Detectar secretos
-            for pattern, label, severity in SECRET_PATTERNS:
+            for pattern, label, severity, rule_id in SECRET_PATTERNS:
                 for match in re.finditer(pattern, content):
                     found_secrets += 1
                     # No mostrar el secreto completo en el reporte, truncar
@@ -445,6 +522,7 @@ def analyze_strings(workdir: str, report: ForensicsReport):
                         file=rel,
                         line=content[:match.start()].count("\n") + 1,
                         evidence=evidence,
+                        rule_id=rule_id,
                     ))
 
     report.interesting_urls = list(found_urls)[:50]  # limitar a 50
@@ -498,6 +576,7 @@ def analyze_crypto(workdir: str, report: ForensicsReport):
                     "HIGH", "Crypto", "Uso de modo ECB detectado",
                     "El modo ECB es inseguro — no oculta patrones en los datos.",
                     file=str(fpath.name),
+                    rule_id="CRYPTO_ECB_MODE",
                 ))
                 break
 
@@ -506,6 +585,7 @@ def analyze_crypto(workdir: str, report: ForensicsReport):
         report.findings.append(Finding(
             "MEDIUM", "Crypto", "Uso de MD5/SHA-1 detectado",
             "MD5 y SHA-1 son considerados inseguros para firmas e integridad.",
+            rule_id="CRYPTO_WEAK_HASH",
         ))
 
     log(f"Primitivas criptográficas: {len(crypto_found)}", "OK")
@@ -556,6 +636,7 @@ def analyze_obfuscation(workdir: str, report: ForensicsReport):
         report.findings.append(Finding(
             "MEDIUM", "Obfuscation", "Uso intensivo de reflection",
             "El uso de reflection puede indicar carga dinámica de código o evasión de análisis.",
+            rule_id="OBFUSCATION_REFLECTION",
         ))
 
     # Detectar DexClassLoader (carga dinámica)
@@ -568,6 +649,7 @@ def analyze_obfuscation(workdir: str, report: ForensicsReport):
                 report.findings.append(Finding(
                     "HIGH", "Obfuscation", "Carga dinámica de código (DexClassLoader)",
                     "La app puede cargar código en tiempo de ejecución, complicando el análisis estático.",
+                    rule_id="OBFUSCATION_DYNAMIC_CODE_LOADING",
                 ))
                 break
         except Exception:
@@ -588,6 +670,7 @@ def analyze_with_jadx(apk_path: str, workdir: str, report: ForensicsReport):
         report.findings.append(Finding(
             "INFO", "Setup", "jadx no disponible",
             "Instala jadx para decompilación Java legible. Ver: https://github.com/skylot/jadx",
+            rule_id="SETUP_JADX_MISSING",
         ))
         return
 
@@ -607,7 +690,7 @@ def analyze_with_jadx(apk_path: str, workdir: str, report: ForensicsReport):
             try:
                 content = fpath.read_text(errors="replace")
                 rel = str(fpath.relative_to(workdir))
-                for pattern, label, severity in SECRET_PATTERNS:
+                for pattern, label, severity, rule_id in SECRET_PATTERNS:
                     for match in re.finditer(pattern, content):
                         evidence = match.group(0)[:80].replace("\n", " ")
                         # Evitar duplicados obvios
@@ -624,6 +707,7 @@ def analyze_with_jadx(apk_path: str, workdir: str, report: ForensicsReport):
                                 file=rel,
                                 line=content[:match.start()].count("\n") + 1,
                                 evidence=evidence,
+                                rule_id=rule_id,
                             ))
             except Exception:
                 continue
@@ -883,6 +967,10 @@ def run_analysis(apk_path: str, workdir: str, no_jadx: bool = False, progress_ca
     analyze_structure(apk_path, report, workdir)
     if progress_callback:
         progress_callback("structure", "ok")
+
+    analyze_dependencies(workdir, report)
+    if progress_callback:
+        progress_callback("dependencies", "ok")
 
     analyze_manifest(apk_path, report, workdir)
     if progress_callback:

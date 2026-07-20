@@ -118,6 +118,13 @@ async def get_job(job_id: UUID, db: AsyncSession = Depends(get_db)):
                 severity_counts[sev] += 1
         response["severity_counts"] = severity_counts
 
+        # Cuantas librerias de terceros identificadas tienen al menos una CVE
+        # conocida (ver cve_lookup.py) - para no obligar al front a contarlas.
+        response["vulnerable_libraries_count"] = sum(
+            1 for lib in response.get("third_party_libraries") or []
+            if lib.get("vulnerabilities")
+        )
+
     return response
 
 
@@ -136,6 +143,7 @@ async def get_job_findings(
     page: int = Query(1, ge=1),
     limit: int = Query(30, ge=1, le=100),
     severity: str | None = Query(None),
+    owasp: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Job).where(Job.id == job_id))
@@ -149,6 +157,16 @@ async def get_job_findings(
 
     if severity:
         findings = [f for f in findings if f.get("severity", "").lower() == severity.lower()]
+
+    # Filtro por categoria OWASP ("M1".."M10"). Server-side a proposito:
+    # con paginacion, filtrar en el cliente romperia los totales. Los
+    # findings viejos (previos al rule_id) no tienen owasp_category y
+    # simplemente no aparecen cuando este filtro esta activo.
+    if owasp:
+        findings = [
+            f for f in findings
+            if (f.get("owasp_category") or {}).get("id", "").lower() == owasp.lower()
+        ]
 
     findings.sort(key=lambda f: _SEVERITY_ORDER.get(f.get("severity", "").lower(), 99))
 
@@ -213,6 +231,7 @@ def _dict_to_finding(d: dict) -> Finding:
         file=d.get("file", ""),
         line=d.get("line", 0),
         evidence=d.get("evidence", ""),
+        rule_id=d.get("rule_id", ""),
     )
 
 

@@ -7,3 +7,4 @@ aiofiles
 python-multipart
 pydantic-settings
 asyncpg
+httpx
