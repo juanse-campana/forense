@@ -5,7 +5,7 @@ Frontend de la plataforma de análisis forense de archivos APK. Proporciona una 
 ## Tech Stack
 
 | Tecnología | Uso |
-|------------|-----|
+| ------------ | --- |
 | **Next.js 16.2.9** | Framework React con App Router |
 | **React 19** | Biblioteca de UI |
 | **TypeScript** | Tipado estático |
@@ -65,7 +65,7 @@ Frontend de la plataforma de análisis forense de archivos APK. Proporciona una 
 
 ## Estructura del proyecto
 
-```
+```text
 web/
 ├── src/
 │   ├── app/
@@ -121,6 +121,7 @@ La aplicación soporta dos idiomas:
 El proyecto sigue el sistema de diseño definido en [`design.md`](../design.md) ubicado en la raíz del repositorio.
 
 Aspectos clave:
+
 - **Paleta de colores**: Tema oscuro con acentos en azul eléctrico, verde matrix y semáforo de severidad (rojo, amarillo, verde).
 - **Tipografía**: Inter para UI, JetBrains Mono para datos técnicos.
 - **Layout**: Grid de 12 columnas, sidebar fijo de 240px en desktop, 64px en tablet.
@@ -129,18 +130,38 @@ Aspectos clave:
 ## Páginas y rutas disponibles
 
 | Ruta | Descripción |
-|------|-------------|
+| ---- | ----------- |
 | `/` | Redirige a `/es` (locale por defecto) |
 | `/[locale]` | Página principal: carga de archivos APK |
 | `/[locale]/history` | Historial de análisis con tabla paginada |
 | `/[locale]/dashboard` | Panel con estadísticas y hallazgos recientes |
+| `/[locale]/jobs/[id]` | Resultado de un análisis, por pestañas: Resumen, Hallazgos, Librerías, Permisos, Criptografía, Estructura, Manifest, Ofuscación |
 
 > Nota: `[locale]` puede ser `es` o `en`.
+
+### Explorador de código y confianza de hallazgos
+
+En la pestaña **Hallazgos**, cada fila es clickeable y abre `CodeSnippetModal`
+(`src/components/job-results/code-snippet-modal.tsx`), que pide a la API el
+extracto de código alrededor de la línea del hallazgo (`GET
+/jobs/{id}/code-snippet`). Si el archivo es un binario compilado (ej. una
+librería nativa `.so`), la API devuelve un volcado hexadecimal en vez de
+texto — el modal lo renderiza distinto (sin numeración de línea de código,
+con una nota aclarando que es hex).
+
+Los hallazgos de tipo secreto también traen `confidence` (`HIGH`/`MEDIUM`/
+`LOW`, independiente de `severity`) — se muestra como un badge secundario
+gris junto al de severidad, solo cuando no es `HIGH`, para no meter ruido
+visual en la mayoría de los hallazgos.
+
+La pestaña **Librerías** (`src/components/job-results/libraries-tab.tsx`)
+muestra las librerías de terceros detectadas con sus CVEs conocidos
+(OSV.dev + NVD, ver `api/README.md`).
 
 ## Scripts disponibles
 
 | Comando | Descripción |
-|---------|-------------|
+| ------- | ----------- |
 | `npm run dev` | Inicia el servidor de desarrollo con Turbopack |
 | `npm run build` | Compila la aplicación para producción |
 | `npm start` | Inicia el servidor de producción (requiere build previo) |
@@ -152,6 +173,7 @@ Aspectos clave:
 
 - Asegúrate de haber ejecutado `npm install`.
 - Elimina `node_modules` y el lockfile, luego reinstala:
+
   ```bash
   rm -rf node_modules package-lock.json
   npm install

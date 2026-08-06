@@ -12,7 +12,7 @@
     "title": "Cargar APK",
     "dragDrop": "Arrastra un archivo APK aquí",
     "orClick": "o haz clic para seleccionar",
-    "maxSize": "Máximo 500MB",
+    "maxSize": "Máximo {size}",
     "analyzing": "Analizando...",
     "uploading": "Subiendo...",
     "analyze": "Analizar",
@@ -20,7 +20,7 @@
     "analyzeAnother": "Analizar otro",
     "completed": "Análisis completado",
     "invalidType": "El archivo debe ser un APK válido",
-    "fileTooLarge": "El archivo excede el límite de 500MB",
+    "fileTooLarge": "El archivo excede el límite de {size}",
     "serverError": "Error del servidor. Intenta de nuevo.",
     "analysisError": "Error durante el análisis",
     "tryAgain": "Intentar de nuevo",
@@ -71,6 +71,7 @@
     "tabs": {
       "overview": "Resumen",
       "findings": "Hallazgos",
+      "libraries": "Librerías",
       "permissions": "Permisos",
       "crypto": "Criptografía",
       "structure": "Estructura",
@@ -127,12 +128,37 @@
     "columns": {
       "severity": "Severidad",
       "category": "Categoría",
+      "owasp": "OWASP",
       "title": "Título",
       "file": "Archivo",
       "line": "Línea",
       "algorithm": "Algoritmo",
       "type": "Tipo",
       "risk": "Riesgo"
+    },
+    "libraries": {
+      "vulnerable": "Librerías vulnerables",
+      "vulnerableHelp": "Librerías de terceros detectadas en el APK que tienen al menos una CVE conocida. Las CVEs se descubren vía OSV.dev y se enriquecen con el puntaje CVSS oficial del NVD; ambas consultas se cachean en la base de datos.",
+      "viewDetails": "Ver detalle",
+      "package": "Paquete",
+      "cves": "CVEs",
+      "cveCount": "{count, plural, one {# CVE} other {# CVEs}}",
+      "noCves": "Sin CVEs conocidas",
+      "empty": "No se identificaron librerías de terceros en este APK",
+      "updateTo": "Actualizar a v{version}"
+    },
+    "codeSnippet": {
+      "loading": "Buscando el código fuente...",
+      "close": "Cerrar",
+      "noLocation": "Este hallazgo no está asociado a una línea de código puntual",
+      "sourceNotFound": "No se pudo recuperar el código fuente para este hallazgo",
+      "toolMissing": "apktool no está disponible en el servidor para decodificar el código",
+      "binaryFile": "Este hallazgo está dentro de un archivo binario (ej. una librería nativa .so) — se muestra un volcado hexadecimal de la zona donde matcheó el patrón, no código fuente"
+    },
+    "confidence": {
+      "help": "Confianza: qué tan seguro está el motor de que este hallazgo es real (distinto de la severidad, que indica qué tan grave sería si lo es)",
+      "medium": "Confianza media",
+      "low": "Confianza baja"
     },
     "noFindings": "No se encontraron hallazgos",
     "noPermissions": "No se encontraron permisos",

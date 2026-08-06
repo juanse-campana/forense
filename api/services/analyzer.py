@@ -10,6 +10,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -168,6 +169,7 @@ async def run(job_id: UUID, apk_path: str):
                             "line": f.line,
                             "evidence": f.evidence,
                             "rule_id": f.rule_id,
+                            "confidence": f.confidence,
                         }
                         for f in report.findings
                     ],
@@ -202,6 +204,18 @@ async def run(job_id: UUID, apk_path: str):
                     await enrich_libraries_with_nvd(job.report["third_party_libraries"], db)
                 except Exception:
                     pass
+
+                # Los tres pasos de arriba mutan job.report["findings"]/
+                # ["third_party_libraries"] IN PLACE. classify_findings y
+                # check_libraries_for_cves hacen sus propios SELECT contra
+                # esta misma sesion, y eso dispara un autoflush que graba
+                # job.report tal como estaba ANTES de que se le agregaran
+                # owasp_category/vulnerabilities/nvd - SQLAlchemy no detecta
+                # mutaciones in-place de un dict ya flusheado, asi que sin
+                # esto el enriquecimiento se calculaba bien pero se perdia
+                # en silencio al hacer commit (comprobado: 0 findings con
+                # owasp_category en un analisis real de 38522 hallazgos).
+                flag_modified(job, "report")
 
                 job.completed_at = datetime.now(timezone.utc)
                 await q.put(("completed", "done"))

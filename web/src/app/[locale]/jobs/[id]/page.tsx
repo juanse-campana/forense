@@ -26,10 +26,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { getJob, getJobFindings, exportJob, type JobDetails, type Finding } from "@/lib/api";
+import { LibrariesTab } from "@/components/job-results/libraries-tab";
+import { CodeSnippetModal } from "@/components/job-results/code-snippet-modal";
 
 const tabs = [
   "overview",
   "findings",
+  "libraries",
   "permissions",
   "crypto",
   "structure",
@@ -139,8 +142,15 @@ function ExportButton({
   );
 }
 
-function OverviewTab({ job }: { job: JobDetails }) {
+function OverviewTab({
+  job,
+  onShowLibraries,
+}: {
+  job: JobDetails;
+  onShowLibraries?: () => void;
+}) {
   const t = useTranslations();
+  const vulnerableLibraries = job.vulnerable_libraries_count ?? 0;
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       <Card>
@@ -241,6 +251,35 @@ function OverviewTab({ job }: { job: JobDetails }) {
           <div className="text-3xl font-semibold text-on-surface">{job.dex_files_count ?? 0}</div>
         </CardContent>
       </Card>
+
+      {job.third_party_libraries !== undefined && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-1.5 text-base">
+              {t("results.libraries.vulnerable")}
+              <Tooltip text={t("results.libraries.vulnerableHelp")} />
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div
+              className={`text-3xl font-semibold ${
+                vulnerableLibraries > 0 ? "text-error" : "text-secondary"
+              }`}
+            >
+              {vulnerableLibraries}
+              <span className="text-base font-normal text-on-surface-variant">
+                {" "}
+                / {job.third_party_libraries.length}
+              </span>
+            </div>
+            {onShowLibraries && (
+              <Button variant="ghost" size="sm" onClick={onShowLibraries}>
+                {t("results.libraries.viewDetails")}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -274,11 +313,17 @@ function FindingsTab({
   severityFilter,
   setSeverityFilter,
   severityCounts,
+  owaspFilter,
+  setOwaspFilter,
+  owaspOptions,
 }: {
   jobId: string;
   severityFilter: (typeof severityFilters)[number];
   setSeverityFilter: (value: (typeof severityFilters)[number]) => void;
   severityCounts?: JobDetails["severity_counts"];
+  owaspFilter: string;
+  setOwaspFilter: (value: string) => void;
+  owaspOptions: { id: string; name: string; count: number }[];
 }) {
   const t = useTranslations();
   const [findings, setFindings] = useState<Finding[]>([]);
@@ -286,6 +331,7 @@ function FindingsTab({
   const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
   const observerRef = React.useRef<HTMLDivElement | null>(null);
 
   const loadFindings = React.useCallback(
@@ -306,7 +352,8 @@ function FindingsTab({
           jobId,
           targetPage,
           30,
-          severityFilter
+          severityFilter,
+          owaspFilter
         );
         setFindings((prev) => (reset ? data.items : [...prev, ...data.items]));
         setHasMore(data.has_more);
@@ -321,13 +368,13 @@ function FindingsTab({
         }
       }
     },
-    [jobId, severityFilter, page, hasMore, isLoadingMore]
+    [jobId, severityFilter, owaspFilter, page, hasMore, isLoadingMore]
   );
 
   useEffect(() => {
     loadFindings(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId, severityFilter]);
+  }, [jobId, severityFilter, owaspFilter]);
 
   useEffect(() => {
     const node = observerRef.current;
@@ -377,6 +424,33 @@ function FindingsTab({
         </span>
       </div>
 
+      {owaspOptions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">
+            OWASP
+          </span>
+          <Button
+            variant={owaspFilter === "all" ? "primary" : "ghost"}
+            size="sm"
+            onClick={() => setOwaspFilter("all")}
+          >
+            {t("results.filters.all")}
+          </Button>
+          {owaspOptions.map((option) => (
+            <Button
+              key={option.id}
+              variant={owaspFilter === option.id ? "primary" : "ghost"}
+              size="sm"
+              onClick={() => setOwaspFilter(option.id)}
+              title={option.name}
+            >
+              {option.id}
+              <span className="ml-1 opacity-70">({option.count})</span>
+            </Button>
+          ))}
+        </div>
+      )}
+
       {isLoading ? (
         <div className="flex h-32 items-center justify-center text-on-surface-variant">
           {t("common.loading")}
@@ -389,6 +463,7 @@ function FindingsTab({
                 <TableRow>
                   <TableHead>{t("results.columns.severity")}</TableHead>
                   <TableHead>{t("results.columns.category")}</TableHead>
+                  <TableHead>{t("results.columns.owasp")}</TableHead>
                   <TableHead>{t("results.columns.title")}</TableHead>
                   <TableHead>{t("results.columns.file")}</TableHead>
                   <TableHead>{t("results.columns.line")}</TableHead>
@@ -399,23 +474,42 @@ function FindingsTab({
                 {findings.map((finding, index) => (
                   <TableRow
                     key={index}
-                    className={index % 2 === 1 ? "bg-surface-container-low/50" : ""}
+                    onClick={() => setSelectedFinding(finding)}
+                    className={`cursor-pointer hover:bg-surface-container-low ${
+                      index % 2 === 1 ? "bg-surface-container-low/50" : ""
+                    }`}
                   >
                     <TableCell>
-                      <Badge
-                        variant={
-                          finding.severity.toLowerCase() as
-                            | "critical"
-                            | "high"
-                            | "medium"
-                            | "low"
-                            | "info"
-                        }
-                      >
-                        {t(`severity.${finding.severity.toLowerCase()}`)}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Badge
+                          variant={
+                            finding.severity.toLowerCase() as
+                              | "critical"
+                              | "high"
+                              | "medium"
+                              | "low"
+                              | "info"
+                          }
+                        >
+                          {t(`severity.${finding.severity.toLowerCase()}`)}
+                        </Badge>
+                        {finding.confidence && finding.confidence !== "HIGH" && (
+                          <Badge variant="info" title={t("results.confidence.help")}>
+                            {t(`results.confidence.${finding.confidence.toLowerCase()}`)}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>{finding.category}</TableCell>
+                    <TableCell>
+                      {finding.owasp_category ? (
+                        <span title={finding.owasp_category.name}>
+                          <Badge variant="info">{finding.owasp_category.id}</Badge>
+                        </span>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
                     <TableCell>{finding.title}</TableCell>
                     <TableCell className="font-mono text-xs">{finding.file || "-"}</TableCell>
                     <TableCell>{finding.line ?? "-"}</TableCell>
@@ -436,6 +530,13 @@ function FindingsTab({
         <div className="rounded bg-surface py-12 text-center text-on-surface-variant outline outline-1 outline-outline-variant">
           {t("results.noFindings")}
         </div>
+      )}
+      {selectedFinding && (
+        <CodeSnippetModal
+          jobId={jobId}
+          finding={selectedFinding}
+          onClose={() => setSelectedFinding(null)}
+        />
       )}
     </div>
   );
@@ -708,6 +809,7 @@ export default function JobResultsPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [severityFilter, setSeverityFilter] = useState<(typeof severityFilters)[number]>("all");
+  const [owaspFilter, setOwaspFilter] = useState<string>("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -730,7 +832,26 @@ export default function JobResultsPage() {
     };
   }, [id, t]);
 
-
+  // Categorias OWASP presentes en ESTE analisis, con su conteo, para los
+  // pills de filtro del tab de hallazgos. Se derivan de los findings ya
+  // cargados en el detalle del job - no hace falta pedirlas aparte. Los
+  // jobs viejos (sin rule_id) no tienen owasp_category y simplemente no
+  // muestran la fila de filtro.
+  // IMPORTANTE: este hook tiene que ir ANTES de los "return" de loading/error
+  // de abajo - los hooks de React no pueden llamarse condicionalmente.
+  const owaspOptions = useMemo(() => {
+    const counts = new Map<string, { name: string; count: number }>();
+    for (const finding of job?.findings ?? []) {
+      const category = finding.owasp_category;
+      if (!category) continue;
+      const entry = counts.get(category.id) ?? { name: category.name, count: 0 };
+      entry.count += 1;
+      counts.set(category.id, entry);
+    }
+    return [...counts.entries()]
+      .map(([id, value]) => ({ id, name: value.name, count: value.count }))
+      .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+  }, [job?.findings]);
 
   if (loading) {
     return (
@@ -807,6 +928,8 @@ export default function JobResultsPage() {
           const count =
             tab === "findings"
               ? job.findings_count
+              : tab === "libraries"
+              ? job.third_party_libraries?.length
               : tab === "permissions"
               ? job.permissions?.length
               : tab === "crypto"
@@ -830,14 +953,22 @@ export default function JobResultsPage() {
       </div>
 
       <div className="min-h-[300px]">
-        {activeTab === "overview" && <OverviewTab job={job} />}
+        {activeTab === "overview" && (
+          <OverviewTab job={job} onShowLibraries={() => setActiveTab("libraries")} />
+        )}
         {activeTab === "findings" && (
           <FindingsTab
             jobId={id}
             severityFilter={severityFilter}
             setSeverityFilter={setSeverityFilter}
             severityCounts={job.severity_counts}
+            owaspFilter={owaspFilter}
+            setOwaspFilter={setOwaspFilter}
+            owaspOptions={owaspOptions}
           />
+        )}
+        {activeTab === "libraries" && (
+          <LibrariesTab libraries={job.third_party_libraries ?? []} />
         )}
         {activeTab === "permissions" && <PermissionsTab job={job} />}
         {activeTab === "crypto" && <CryptoTab job={job} />}

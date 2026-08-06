@@ -211,7 +211,7 @@ def main():
             "JDBC":        "jdbc:mysql://prod.db.com:3306/users",
         }
         for label, sample in test_strings.items():
-            matched = any(re.search(p, sample) for p, _, _ in SECRET_PATTERNS)
+            matched = any(re.search(p, sample) for p, _, _, _ in SECRET_PATTERNS)
             total += 1
             ok = run_test(f"Patrón detecta '{label}'", matched, f"sample: {sample}")
             passed += ok

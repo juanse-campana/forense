@@ -12,7 +12,7 @@
     "title": "Upload APK",
     "dragDrop": "Drop an APK file here",
     "orClick": "or click to select",
-    "maxSize": "Max 500MB",
+    "maxSize": "Max {size}",
     "analyzing": "Analyzing...",
     "uploading": "Uploading...",
     "analyze": "Analyze",
@@ -20,7 +20,7 @@
     "analyzeAnother": "Analyze another",
     "completed": "Analysis completed",
     "invalidType": "File must be a valid APK",
-    "fileTooLarge": "File exceeds the 500MB limit",
+    "fileTooLarge": "File exceeds the {size} limit",
     "serverError": "Server error. Please try again.",
     "analysisError": "Error during analysis",
     "tryAgain": "Try again",
@@ -71,6 +71,7 @@
     "tabs": {
       "overview": "Overview",
       "findings": "Findings",
+      "libraries": "Libraries",
       "permissions": "Permissions",
       "crypto": "Cryptography",
       "structure": "Structure",
@@ -127,12 +128,37 @@
     "columns": {
       "severity": "Severity",
       "category": "Category",
+      "owasp": "OWASP",
       "title": "Title",
       "file": "File",
       "line": "Line",
       "algorithm": "Algorithm",
       "type": "Type",
       "risk": "Risk"
+    },
+    "libraries": {
+      "vulnerable": "Vulnerable libraries",
+      "vulnerableHelp": "Third-party libraries detected in the APK that have at least one known CVE. CVEs are discovered via OSV.dev and enriched with the official NVD CVSS score; both lookups are cached in the database.",
+      "viewDetails": "View details",
+      "package": "Package",
+      "cves": "CVEs",
+      "cveCount": "{count, plural, one {# CVE} other {# CVEs}}",
+      "noCves": "No known CVEs",
+      "empty": "No third-party libraries identified in this APK",
+      "updateTo": "Update to v{version}"
+    },
+    "codeSnippet": {
+      "loading": "Fetching source code...",
+      "close": "Close",
+      "noLocation": "This finding is not tied to a specific line of code",
+      "sourceNotFound": "Could not recover the source code for this finding",
+      "toolMissing": "apktool is not available on the server to decode the code",
+      "binaryFile": "This finding is inside a binary file (e.g. a native .so library) — showing a hex dump of the matched region, not source code"
+    },
+    "confidence": {
+      "help": "Confidence: how sure the engine is that this finding is real (different from severity, which reflects how bad it would be if it is)",
+      "medium": "Medium confidence",
+      "low": "Low confidence"
     },
     "noFindings": "No findings found",
     "noPermissions": "No permissions found",

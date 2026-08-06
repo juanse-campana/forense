@@ -19,6 +19,7 @@ from config import settings
 # Import report generation logic from apk_forensics
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from apk_forensics import ForensicsReport, Finding, _write_json, _write_markdown, _write_html
+from services.code_snippet import get_code_snippet
 
 router = APIRouter()
 
@@ -37,7 +38,8 @@ async def create_job(
 
     content = await file.read()
     if len(content) > settings.max_file_size:
-        raise HTTPException(status_code=413, detail="File too large (max 500MB)")
+        max_mb = settings.max_file_size // (1024 * 1024)
+        raise HTTPException(status_code=413, detail=f"File too large (max {max_mb}MB)")
 
     with open(file_path, "wb") as f:
         f.write(content)
@@ -232,6 +234,7 @@ def _dict_to_finding(d: dict) -> Finding:
         line=d.get("line", 0),
         evidence=d.get("evidence", ""),
         rule_id=d.get("rule_id", ""),
+        confidence=d.get("confidence", "HIGH"),
     )
 
 
@@ -263,6 +266,7 @@ def _report_from_json(data: dict) -> ForensicsReport:
         interesting_urls=data.get("interesting_urls", []),
         interesting_files=data.get("interesting_files", []),
         tool_versions=data.get("tool_versions", {}),
+        third_party_libraries=data.get("third_party_libraries", []),
     )
 
 
@@ -424,3 +428,19 @@ async def get_job_file_content(
         raise HTTPException(status_code=400, detail="Unable to read file")
 
     return {"content": content, "path": path, "name": target_path.name}
+
+
+@router.get("/api/v1/jobs/{job_id}/code-snippet")
+async def get_finding_code_snippet(
+    job_id: UUID,
+    file: str = Query(""),
+    line: int = Query(0),
+    category: str = Query(""),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return await get_code_snippet(job, file, line, category)

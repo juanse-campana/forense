@@ -1,4 +1,6 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+export type Severity = "critical" | "high" | "medium" | "low" | "info";
 
 export interface Job {
   id: string;
@@ -6,19 +8,71 @@ export interface Job {
   filename: string;
   package_name?: string;
   findings_count?: number;
-  highest_severity?: "critical" | "high" | "medium" | "low" | "info";
+  highest_severity?: Severity;
   obfuscation_score?: number;
   created_at?: string;
 }
 
+export interface OwaspCategory {
+  id: string; // "M1".."M10"
+  name: string;
+}
+
 export interface Finding {
-  severity: "critical" | "high" | "medium" | "low" | "info";
+  severity: Severity;
   category: string;
   title: string;
   detail?: string;
   file?: string;
   line?: number;
   evidence?: string;
+  rule_id?: string;
+  confidence?: "HIGH" | "MEDIUM" | "LOW";
+  owasp_category?: OwaspCategory | null;
+}
+
+export interface NvdCveDetail {
+  cve_id: string;
+  cvss_score?: number | null;
+  cvss_severity?: string | null; // "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
+  description?: string | null;
+  published_at?: string | null;
+  references?: string[];
+}
+
+export interface LibraryVulnerability {
+  id: string; // "GHSA-..." o "CVE-..."
+  summary?: string;
+  aliases?: string[];
+  severity?: { type?: string; score?: string } | null;
+  fixed_version?: string | null;
+  references?: string[];
+  nvd?: NvdCveDetail | null;
+}
+
+export interface ThirdPartyLibrary {
+  group_id: string;
+  artifact_id: string;
+  version: string;
+  package_name: string; // "group:artifact"
+  source_file?: string;
+  vulnerabilities?: LibraryVulnerability[];
+}
+
+export type CodeSnippetUnavailableReason =
+  | "no_location"
+  | "source_not_found"
+  | "tool_missing";
+
+export interface CodeSnippet {
+  available: boolean;
+  reason?: CodeSnippetUnavailableReason;
+  file?: string;
+  line?: number;
+  start_line?: number;
+  end_line?: number;
+  is_binary?: boolean;
+  snippet?: string;
 }
 
 export interface FileEntry {
@@ -66,7 +120,9 @@ export interface JobDetails extends Job {
   obfuscation_indicators?: string[];
   debuggable?: boolean;
   allow_backup?: boolean;
-  severity_counts?: Record<"critical" | "high" | "medium" | "low" | "info", number>;
+  severity_counts?: Record<Severity, number>;
+  third_party_libraries?: ThirdPartyLibrary[];
+  vulnerable_libraries_count?: number;
 }
 
 export interface ProgressEvent {
@@ -147,7 +203,8 @@ export async function getJobFindings(
   jobId: string,
   page = 1,
   limit = 30,
-  severity?: string
+  severity?: string,
+  owasp?: string
 ): Promise<PaginatedFindings> {
   const params = new URLSearchParams({
     page: String(page),
@@ -155,6 +212,9 @@ export async function getJobFindings(
   });
   if (severity && severity !== "all") {
     params.append("severity", severity);
+  }
+  if (owasp && owasp !== "all") {
+    params.append("owasp", owasp);
   }
 
   const response = await fetch(
@@ -324,6 +384,30 @@ export async function getJobFileContent(
       .catch(() => ({ detail: "Failed to fetch file content" }));
     throw new Error(
       error.detail || `Failed to fetch file content: ${response.statusText}`
+    );
+  }
+
+  return response.json();
+}
+
+export async function getFindingCodeSnippet(
+  jobId: string,
+  file: string,
+  line: number,
+  category: string
+): Promise<CodeSnippet> {
+  const params = new URLSearchParams({ file, line: String(line ?? 0), category });
+
+  const response = await fetch(
+    `${API_BASE}/api/v1/jobs/${jobId}/code-snippet?${params.toString()}`
+  );
+
+  if (!response.ok) {
+    const error = await response
+      .json()
+      .catch(() => ({ detail: "Failed to fetch code snippet" }));
+    throw new Error(
+      error.detail || `Failed to fetch code snippet: ${response.statusText}`
     );
   }
 

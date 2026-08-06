@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres@localhost:5432/forense"
     upload_dir: str = "uploads"
-    max_file_size: int = 500 * 1024 * 1024  # 500MB
+    max_file_size: int = 100 * 1024 * 1024  # 100MB (límite de request de Cloudflare)
 
     # Enriquecimiento de CVEs contra el NVD (ver services/cve_details.py).
     # Sin API key el NVD limita a 5 req/30s; con key (gratis, se pide por

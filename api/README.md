@@ -5,7 +5,7 @@ Backend para el análisis forense de archivos APK. Expone una API REST construid
 ## Tech Stack
 
 | Tecnología | Uso |
-|------------|-----|
+| ------------ | --- |
 | **FastAPI** | Framework web async para Python |
 | **SQLAlchemy (async)** | ORM para consultas asíncronas a la base de datos |
 | **PostgreSQL** | Base de datos relacional para persistir jobs y reportes |
@@ -73,11 +73,11 @@ Backend para el análisis forense de archivos APK. Expone una API REST construid
 Todas las variables usan el prefijo `FORENSE_`.
 
 | Variable | Valor por defecto | Descripción |
-|----------|-------------------|-------------|
+| -------- | ------------------ | ------------ |
 | `FORENSE_DATABASE_URL` | `postgresql+asyncpg://forense:forense@localhost:5432/forense` | URL de conexión a PostgreSQL (usa `asyncpg` para modo async) |
 | `FORENSE_UPLOAD_DIR` | `uploads` | Directorio donde se almacenan los APK subidos |
 | `FORENSE_MAX_FILE_SIZE` | `524288000` (500 MB) | Tamaño máximo de archivo en bytes |
-| `FORENSE_NVD_API_KEY` | _(vacío)_ | API key del NVD para enriquecer CVEs (gratis: https://nvd.nist.gov/developers/request-an-api-key). Sin key: 5 req/30s; con key: 50 req/30s |
+| `FORENSE_NVD_API_KEY` | _(vacío)_ | API key del NVD para enriquecer CVEs (gratis: <https://nvd.nist.gov/developers/request-an-api-key>). Sin key: 5 req/30s; con key: 50 req/30s |
 | `FORENSE_NVD_MAX_PER_ANALYSIS` | `40` | Tope de CVEs nuevos a consultar al NVD por análisis (el resto se completa en análisis posteriores) |
 
 Ejemplo de archivo `.env`:
@@ -97,7 +97,7 @@ Cada análisis se enriquece con dos fuentes externas, ambas con patrón
 no se vuelve a consultar la red):
 
 | Fuente | Qué aporta | Tabla cache | TTL |
-|--------|------------|-------------|-----|
+| ------ | ---------- | ----------- | --- |
 | **OSV.dev** (Google, sin auth) | CVEs por librería de terceros (coordenadas Maven + versión) | `library_vulnerability_cache` | 30 días |
 | **NVD** (NIST, API key opcional) | Detalle oficial por CVE: puntaje CVSS v3.1, severidad, descripción, fechas | `cve_details` | 90 días |
 
@@ -106,24 +106,26 @@ Top 10 (2024)** mediante un mapeo estático (`finding_owasp_mapping`,
 seedeado en la migración 004) — OWASP publica una lista, no una API, por
 eso es un lookup local sin llamadas externas.
 
-
 ## Endpoints de la API
 
 ### Jobs
 
 | Método | Endpoint | Descripción |
-|--------|----------|-------------|
+| ------ | -------- | ----------- |
 | `POST` | `/api/v1/jobs` | Subir un archivo APK y crear un job de análisis |
 | `GET` | `/api/v1/jobs` | Listar jobs con paginación (`page`, `limit`) |
 | `GET` | `/api/v1/jobs/{job_id}` | Obtener detalle de un job específico (incluye `third_party_libraries` con CVEs y `vulnerable_libraries_count`) |
-| `GET` | `/api/v1/jobs/{job_id}/findings` | Hallazgos paginados; filtros opcionales `severity` y `owasp` (`M1`..`M10`) |
+| `GET` | `/api/v1/jobs/{job_id}/findings` | Hallazgos paginados; filtros opcionales `severity` y `owasp` (`M1`..`M10`). Cada finding trae `confidence` (`HIGH`/`MEDIUM`/`LOW`, ver más abajo) |
 | `DELETE` | `/api/v1/jobs/{job_id}` | Eliminar un job y sus archivos asociados |
 | `GET` | `/api/v1/jobs/{job_id}/progress` | Stream SSE con el progreso del análisis en tiempo real |
+| `GET` | `/api/v1/jobs/{job_id}/files` | Listar archivos decompilados por JADX (explorador de código) |
+| `GET` | `/api/v1/jobs/{job_id}/files/content` | Contenido completo de un archivo decompilado |
+| `GET` | `/api/v1/jobs/{job_id}/code-snippet` | Extracto de código alrededor de la línea de un finding (`file`, `line`, `category`). Re-decodifica con `apktool` bajo demanda si hace falta (cacheado por job); si el match cae en un binario compilado, devuelve un volcado hexadecimal en vez de texto |
 
 ### Health
 
 | Método | Endpoint | Descripción |
-|--------|----------|-------------|
+| ------ | -------- | ----------- |
 | `GET` | `/health` | Verificar que el servicio está activo |
 | `GET` | `/health/db` | Verificar conectividad con PostgreSQL |
 

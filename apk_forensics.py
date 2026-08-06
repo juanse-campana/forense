@@ -21,6 +21,7 @@ Uso:
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -29,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+from collections import Counter
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
@@ -77,6 +79,12 @@ class Finding:
     # exportado: activity: .Foo"), rule_id nunca cambia - es lo que se usa
     # para mapear cada hallazgo a su categoria del OWASP Mobile Top 10.
     rule_id: str = ""
+    # Que tan confiable es el match, separado de `severity` ("que tan grave
+    # si es real"): HIGH/MEDIUM/LOW. Solo se calcula para hallazgos Secret/
+    # Secret (Java) via _estimate_confidence (ver SECRET_PATTERNS mas abajo)
+    # - el resto de las categorias son hechos estructurales verificables, no
+    # "tal vez", asi que quedan en HIGH fijo.
+    confidence: str = "HIGH"
 
 @dataclass
 class ForensicsReport:
@@ -130,6 +138,60 @@ SECRET_PATTERNS = [
     (r'(?i)(firebase[_\-]?url|firebaseio\.com)',                               "Firebase URL", "MEDIUM",   "SECRET_FIREBASE_URL"),
     (r'(?i)(jdbc:|mongodb://|mysql://|postgres://)',                           "DB Connection String","HIGH", "SECRET_DB_CONNECTION_STRING"),
 ]
+
+# ──────────────────────────────────────────────
+#  Confianza de un match de SECRET_PATTERNS (separada de severidad)
+# ──────────────────────────────────────────────
+# El formato del match ya es la evidencia (prefijo/longitud fija de Google,
+# header PEM literal, protocolo jdbc:/mongodb://) - confianza alta incluso
+# dentro de un binario, porque encontrar ese string exacto ahi sigue siendo
+# señal real.
+_SELF_VALIDATING = {"SECRET_GOOGLE_API_KEY", "SECRET_EMBEDDED_PRIVATE_KEY", "SECRET_DB_CONNECTION_STRING"}
+# El regex ya exige un blob largo tipo base64 - volver a chequear entropia no
+# discrimina nada (siempre da alta por construccion). Capado en MEDIUM porque
+# un blob base64 largo aparece todo el tiempo en contenido legitimo.
+_GENERIC_ENTROPY = {"SECRET_BASE64_POSSIBLE"}
+# Solo detectan que aparece una palabra/frase, sin exigir valor real cerca -
+# son los mas ruidosos (ej. SECRET_PRIVATE_KEY matchea el nombre de una
+# variable Dart compilada dentro de un .so, sin ninguna clave real cerca).
+_BARE_KEYWORD = {"SECRET_PRIVATE_KEY", "SECRET_AWS_CREDENTIALS", "SECRET_FIREBASE_URL"}
+_BINARY_EXTENSIONS = {".so", ".dll", ".exe", ".dylib", ".bin"}
+
+
+def _shannon_entropy(s: str) -> float:
+    if not s:
+        return 0.0
+    counts = Counter(s)
+    length = len(s)
+    return -sum((n / length) * math.log2(n / length) for n in counts.values())
+
+
+def _entropy_candidate(match: "re.Match", content: str) -> str:
+    groups = [g for g in match.groups() if g and len(g) >= 8]
+    if groups:
+        return groups[-1]
+    window = content[match.end():match.end() + 100]
+    found = re.search(r'[A-Za-z0-9+/_\-]{12,}', window)
+    return found.group(0) if found else match.group(0)
+
+
+def _estimate_confidence(rule_id: str, match: "re.Match", content: str, file_ext: str) -> str:
+    if rule_id in _SELF_VALIDATING:
+        confidence = "HIGH"
+    elif rule_id in _GENERIC_ENTROPY:
+        confidence = "MEDIUM"
+    else:
+        candidate = _entropy_candidate(match, content)
+        high_entropy = len(candidate) >= 12 and _shannon_entropy(candidate) >= 3.5
+        if rule_id in _BARE_KEYWORD:
+            confidence = "MEDIUM" if high_entropy else "LOW"
+        else:
+            confidence = "HIGH" if high_entropy else "MEDIUM"
+
+    if file_ext in _BINARY_EXTENSIONS and rule_id not in _SELF_VALIDATING:
+        confidence = "LOW"
+    return confidence
+
 
 CRYPTO_PATTERNS = [
     (r'(?i)\b(AES|DES|3DES|TripleDES)\b',           "Symmetric cipher"),
@@ -523,6 +585,7 @@ def analyze_strings(workdir: str, report: ForensicsReport):
                         line=content[:match.start()].count("\n") + 1,
                         evidence=evidence,
                         rule_id=rule_id,
+                        confidence=_estimate_confidence(rule_id, match, content, fpath.suffix.lower()),
                     ))
 
     report.interesting_urls = list(found_urls)[:50]  # limitar a 50
@@ -571,11 +634,13 @@ def analyze_crypto(workdir: str, report: ForensicsReport):
                 content = fpath.read_text(errors="replace")
             except Exception:
                 continue
-            if re.search(r'(?i)/ECB/', content):
+            m = re.search(r'(?i)/ECB/', content)
+            if m:
                 report.findings.append(Finding(
                     "HIGH", "Crypto", "Uso de modo ECB detectado",
                     "El modo ECB es inseguro — no oculta patrones en los datos.",
-                    file=str(fpath.name),
+                    file=str(fpath.relative_to(workdir)),
+                    line=content[:m.start()].count("\n") + 1,
                     rule_id="CRYPTO_ECB_MODE",
                 ))
                 break
@@ -708,6 +773,7 @@ def analyze_with_jadx(apk_path: str, workdir: str, report: ForensicsReport):
                                 line=content[:match.start()].count("\n") + 1,
                                 evidence=evidence,
                                 rule_id=rule_id,
+                                confidence=_estimate_confidence(rule_id, match, content, fpath.suffix.lower()),
                             ))
             except Exception:
                 continue

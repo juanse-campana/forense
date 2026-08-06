@@ -31,7 +31,7 @@ type UploadState =
   | { status: "completed"; job: Job }
   | { status: "error"; message: string };
 
-const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB (límite de request de Cloudflare)
 
 // El analisis sigue corriendo en el backend aunque el usuario navegue a otra
 // pagina (Historial, etc.) y vuelva - sin esto, al volver el componente se
@@ -87,7 +87,10 @@ export default function UploadPage() {
       return;
     }
     if (file.size > MAX_FILE_SIZE) {
-      setState({ status: "error", message: t("upload.fileTooLarge") });
+      setState({
+        status: "error",
+        message: t("upload.fileTooLarge", { size: formatBytes(MAX_FILE_SIZE) }),
+      });
       return;
     }
     setState({ status: "file-selected", file });
@@ -266,7 +269,7 @@ export default function UploadPage() {
                 {t("upload.orClick")}
               </p>
               <p className="text-xs text-on-surface-variant mt-2">
-                {t("upload.maxSize")}
+                {t("upload.maxSize", { size: formatBytes(MAX_FILE_SIZE) })}
               </p>
             </div>
           )}
