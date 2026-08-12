@@ -30,11 +30,15 @@ async def create_job(
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
+    filename = Path(file.filename or "").name
+    if not filename:
+        raise HTTPException(status_code=400, detail="Missing or invalid filename")
+
     job_id = uuid4()
     upload_dir = Path(settings.upload_dir) / str(job_id)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    file_path = upload_dir / file.filename
+    file_path = upload_dir / filename
 
     content = await file.read()
     if len(content) > settings.max_file_size:
@@ -46,7 +50,7 @@ async def create_job(
 
     job = Job(
         id=job_id,
-        filename=file.filename,
+        filename=filename,
         file_size=len(content),
         file_path=str(file_path),
     )
