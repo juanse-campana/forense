@@ -16,5 +16,38 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: forense-backend
+    ports:
+      - "8000:8000"
+    environment:
+      FORENSE_DATABASE_URL: postgresql+asyncpg://forense:forense@postgres:5432/forense
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - backend_uploads:/app/api/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ./web
+    container_name: forense-web
+    ports:
+      - "3000:3000"
+    environment:
+      BACKEND_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  backend_uploads:

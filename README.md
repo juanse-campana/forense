@@ -31,9 +31,31 @@ Es **análisis estático**: se lee el archivo `.apk` como una radiografía, sin 
 
 ## Instalación
 
-Elegí la ruta según lo que necesites: **A)** solo el motor por consola, o **B)** el stack completo con interfaz web.
+### Instalación rápida (con Docker)
 
-### Prerrequisitos comunes
+La forma más simple de levantar todo (Postgres + API + Web) en tu localhost — solo necesitás Docker instalado, nada de Python, Node, apktool ni jadx en tu máquina:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/juanse-campana/forense/main/install.sh | bash
+```
+
+Clona el repo (si no estás ya parado adentro) y corre `docker compose up --build` por vos.
+
+¿Preferís revisar el script antes de correrlo? Totalmente razonable, no confíes ciegamente en un `curl | bash` de un repo que no conocés:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/juanse-campana/forense/main/install.sh -o install.sh
+cat install.sh   # revisalo
+bash install.sh
+```
+
+Al terminar: Web en `http://localhost:3000`, API en `http://localhost:8000/docs`.
+
+### Instalación manual
+
+Si preferís no usar el instalador automático, elegí la ruta según lo que necesites: **A)** solo el motor por consola, **B)** el stack completo en modo desarrollo (código corriendo local, con hot-reload), o **C)** el stack completo con Docker paso a paso (lo mismo que hace `install.sh`, pero a mano).
+
+#### Prerrequisitos comunes
 
 | Herramienta | Para qué | Obligatoria |
 | --- | --- | --- |
@@ -43,7 +65,7 @@ Elegí la ruta según lo que necesites: **A)** solo el motor por consola, o **B)
 | Docker + Docker Compose | Postgres para el stack completo (ruta B) | Solo para ruta B |
 | Node.js 20+ | Interfaz web (ruta B) | Solo para ruta B |
 
-### A) Solo el motor (CLI, sin base de datos ni web)
+#### A) Solo el motor (CLI, sin base de datos ni web)
 
 ```bash
 git clone <url-del-repo> forense
@@ -62,7 +84,7 @@ python3 apk_forensics.py mi_app.apk
 
 Sin ningún paso más — no hace falta `pip install` nada, el motor usa solo la librería estándar de Python. Ver [Uso del motor CLI](#uso-del-motor-cli) más abajo para todas las opciones.
 
-### B) Stack completo (API + Web + Postgres)
+#### B) Stack completo (API + Web + Postgres)
 
 ```bash
 git clone <url-del-repo> forense
@@ -92,6 +114,22 @@ npm run dev
 ```
 
 Los defaults de arriba (Postgres en `localhost:5432` con usuario/clave `forense`) funcionan sin tocar nada más — no hace falta crear un `.env` para el backend salvo que quieras cambiar algo (por ejemplo, agregar una API key del NVD). Guías completas y todas las variables de entorno disponibles: [`api/README.md`](api/README.md) y [`web/README.md`](web/README.md).
+
+#### C) Stack completo con Docker, paso a paso
+
+Requiere únicamente Docker y Docker Compose — no hace falta Python, Node, apktool, jadx ni nada de eso en tu máquina, todo vive dentro de las imágenes.
+
+```bash
+git clone <url-del-repo> forense
+cd forense
+docker compose up --build
+```
+
+- API en `http://localhost:8000` (docs en `/docs`)
+- Web en `http://localhost:3000`
+- Postgres en `localhost:5432`
+
+La primera vez tarda unos minutos porque compila las imágenes (la del backend instala Java, apktool y jadx). Las siguientes veces arranca en segundos. Las migraciones de Alembic corren solas al levantar el backend, y los uploads quedan en un volumen (`backend_uploads`) que sobrevive a los reinicios del contenedor.
 
 ---
 
@@ -293,6 +331,7 @@ En `apk_forensics.py`, añadir a `SECRET_PATTERNS` una tupla `(regex, título, s
 forense/
 ├── apk_forensics.py         # Motor CLI (stdlib puro)
 ├── test_framework.py        # Suite de tests del motor (16 tests, sin dependencias)
+├── install.sh                # Instalador: clona el repo y levanta el stack con Docker
 ├── setup_wsl.sh             # Instala Java/apktool/jadx/aapt en WSL/Linux
 ├── docker-compose.yml        # Postgres para el stack completo
 ├── novabank-demo-vulnerable.apk  # APK de prueba para demos/CTF

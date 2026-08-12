@@ -1,0 +1,14 @@
+.git
+.claude
+.rtfm
+openspec
+reports
+web
+api/venv
+api/uploads
+api/.env
+api/.env.local
+**/__pycache__
+*.pyc
+*.apk
+.DS_Store
