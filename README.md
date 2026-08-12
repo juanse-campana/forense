@@ -33,7 +33,7 @@ Es **análisis estático**: se lee el archivo `.apk` como una radiografía, sin 
 
 ### Instalación rápida (con Docker)
 
-La forma más simple de levantar todo (Postgres + API + Web) en tu localhost — solo necesitás Docker instalado, nada de Python, Node, apktool ni jadx en tu máquina:
+La forma más simple de levantar todo (Postgres + API + Web) en tu localhost — solo necesitás Docker instalado, nada de Python, Node, apktool ni jadx en tu máquina. Es un script bash: en Linux y macOS corré el comando tal cual; **en Windows, corrélo adentro de WSL** (no funciona en PowerShell/CMD nativo).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/juanse-campana/forense/main/install.sh | bash
