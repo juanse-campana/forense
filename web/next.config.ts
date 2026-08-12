@@ -12,6 +12,13 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(__dirname),
   },
+  // Next trunca el body de los requests proxeados a 10MB por default. Los
+  // APKs reales superan eso facil, asi que subimos el limite por encima
+  // de FORENSE_MAX_FILE_SIZE del backend (100MB por default) para que el
+  // backend sea el que decide si el archivo es demasiado grande, no Next.
+  experimental: {
+    proxyClientMaxBodySize: "500mb",
+  },
   async rewrites() {
     return [
       {
